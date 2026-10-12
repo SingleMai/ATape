@@ -1,5 +1,5 @@
 import { AdapterRuntimes, GitSourceAttribution } from "@atape/application"
-import { AdapterProtocolVersion, NewSessionVersion, CanonicalProfileVersion3, type LocalProject, type AdapterInstallation } from "@atape/domain"
+import { AdapterProtocolVersion, NewSessionVersion, CanonicalProfileVersion3, CanonicalProfileVersion5, type LocalProject, type AdapterInstallation } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { mkdtemp, mkdir, realpath, rm, writeFile, readFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -49,18 +49,18 @@ describe("Adapter Host controlled start", () => {
     const f = await fixture("", null, null)
     expect(await f.run(Effect.scoped(AdapterRuntimes.use(r => r.open(f.project, f.adapter).pipe(Effect.map(runtime => runtime.newSession)))))).toBeUndefined()
   })
-  it("advertises nullable-clock Host support and retains an explicitly selected legacy profile", async () => {
+  it.each([CanonicalProfileVersion3, CanonicalProfileVersion5])("advertises Host support and retains an explicitly selected legacy profile %s", async profile => {
     const f = await fixture("", null, null)
     const packageRoot = join(f.home, "adapters", "node_modules", "test-adapter")
     const metadata = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"))
-    metadata.atapeAdapter.legacyCanonicalProfile = CanonicalProfileVersion3
+    metadata.atapeAdapter.legacyCanonicalProfile = profile
     await writeFile(join(packageRoot, "package.json"), JSON.stringify(metadata))
     await writeFile(join(packageRoot, "index.mjs"), `export const createAtapeAdapter = context => {
-      if (JSON.stringify(context.legacyCanonicalProfiles) !== '["${CanonicalProfileVersion3}"]') throw Error("Host profile missing");
-      return {canonicalProfileVersion:"${CanonicalProfileVersion3}", collect:()=>({})};
+      if (JSON.stringify(context.legacyCanonicalProfiles) !== '${JSON.stringify(profile === CanonicalProfileVersion5 ? [CanonicalProfileVersion3, CanonicalProfileVersion5] : [CanonicalProfileVersion3])}') throw Error("Host profile missing");
+      return {canonicalProfileVersion:"${profile}", collect:()=>({})};
     };`)
     const runtime = await f.run(Effect.scoped(AdapterRuntimes.use(r => r.open(f.project, f.adapter))))
-    expect("collect" in runtime && runtime.canonicalProfileVersion).toBe(CanonicalProfileVersion3)
+    expect("collect" in runtime && runtime.canonicalProfileVersion).toBe(profile)
   })
   it.each([[CanonicalProfileVersion3, undefined], [undefined, CanonicalProfileVersion3],
     [CanonicalProfileVersion3, "atape.acp-centered.v2"], [CanonicalProfileVersion3, "atape.acp-centered.v4"]])(

@@ -1,9 +1,9 @@
 import type {
   SourceCaptureLimits, SourceProjectionLimits, SourceDiscoveryPage, SourceCapturePriorThread, GitSource, GitSourceDecision,
   AdapterCollectionPage, AdapterCollectionProgress, AdapterCollectionLimitValues, AdapterInstallation,
-  CanonicalApplyReceipt, CollectorCheckpoint, LocalProject, RawAppendReceipt, NewSessionResult
+  CanonicalApplyReceipt, CollectorCheckpoint, LocalProject, RawAppendReceipt, NewSessionResult, AdapterManifest
 } from "@atape/domain"
-import { AdapterObservation, AdapterProtocolVersion, AdapterSourceFailure, CanonicalProfileVersion3 } from "@atape/domain"
+import { AdapterObservation, AdapterProtocolVersion, AdapterSourceFailure, CanonicalProfileVersion3, CanonicalProfileVersion5 } from "@atape/domain"
 import { Context, Effect, Schema, Scope } from "effect"
 import type { CompiledRedactionPolicy } from "./redaction.ts"
 import type { PublicationDraftView } from "./publicationPreparation.ts"
@@ -99,9 +99,11 @@ export type HostedNewSession = {
   }) => Effect.Effect<NewSessionResult, AdapterRuntimeError>
 }
 export type HostedAdapter = { readonly newSession?: HostedNewSession } & ({
-  readonly canonicalProfileVersion?: typeof CanonicalProfileVersion3
+  readonly canonicalProfileVersion?: typeof CanonicalProfileVersion3 | typeof CanonicalProfileVersion5
   readonly collect: (request: HostedCollectRequest) => Effect.Effect<AdapterCollectionPage, AdapterRuntimeError>
 } | {
+  /** Validated package minimum; remote admission precedes journal/source work. */
+  readonly publicationTargetProfile?: AdapterManifest["publicationTargetProfile"]
   readonly sourceCapture: HostedSourceCapture
   /** Host-owned ownership check after discovery has released its source view. */
   readonly attribute: (source: GitSource) => Effect.Effect<GitSourceDecision, AdapterRuntimeError>
@@ -115,7 +117,7 @@ export class AdapterRuntimes extends Context.Service<AdapterRuntimes, {
 }>()("atape/application/AdapterRuntimes") {}
 
 export type CanonicalSubmission = {
-  readonly canonicalProfileVersion?: typeof CanonicalProfileVersion3
+  readonly canonicalProfileVersion?: typeof CanonicalProfileVersion3 | typeof CanonicalProfileVersion5
   readonly instanceOrigin: string
   readonly userId: string
   readonly installationId: string
@@ -146,7 +148,7 @@ export type RawSubmission = {
 export type CollectorTransportService = {
   /** Affirmative admission before nullable-clock source collection or state writes. */
   ensureCanonicalProfile(project: Pick<LocalProject, "instanceOrigin" | "userId" | "id">,
-    profile: typeof CanonicalProfileVersion3): Effect.Effect<void, CollectionTransportError>
+    profile: typeof CanonicalProfileVersion3 | typeof CanonicalProfileVersion5): Effect.Effect<void, CollectionTransportError>
   rawCaptureEnabled(project: Pick<LocalProject, "instanceOrigin" | "userId" | "id">): Effect.Effect<boolean, CollectionTransportError>
   submitCanonical(submission: CanonicalSubmission): Effect.Effect<CanonicalApplyReceipt, CollectionTransportError>
   appendRaw(submission: RawSubmission): Effect.Effect<RawAppendReceipt, CollectionTransportError>

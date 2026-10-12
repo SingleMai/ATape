@@ -538,9 +538,11 @@ the capability check. Fresh local intent/configuration/inventory checks prevent
 Start or account changes from reusing an obsolete preflight.
 SourceCapture v2 manifests can declare `publicationTargetProfile`; older packages
 default to Profile2. Enabled Profile3 candidates, including Cursor, require a
-negotiated Profile3 capability before pause. Current Claude candidates declare
-Profile4 for normalized tool identities and require a negotiated Profile4.
-Other Adapters retain the existing Profile2 requirement. This static minimum
+negotiated Profile3 capability before pause. Current checkout Claude candidates
+declare Profile5 for stable native tool identities and require negotiated
+Profile5; current Codex candidates require affirmative Canonical v5 admission.
+Published 0.5.10 Claude retains Profile4. Other Adapters retain the existing
+Profile2 requirement. This static minimum
 does not replace runtime header and explicit Host capability checks.
 
 An active controlled-session creation proof defers reader-floor advancement until
@@ -759,6 +761,45 @@ configuration/credentials/Raw receipts, available-source replay and continuation
 and the genuine old Adapter's cursor refusal. Distribution and Server HTTP are
 owned external Test Adapters. It does not establish authenticated live Codex
 acceptance, OS registration or an upgrade of a personal installation.
+
+### Stable native tool identity: checkout increment
+
+The current checkout adds Canonical/publication v5 and Analytics v4 for explicit
+Claude and Codex tool identities. It has not been published or deployed; package
+versions still read 0.5.10. The published 0.5.10 Server does not advertise v5,
+and its CLI/Adapters cannot collect this revision. Do not install these new
+Adapters by themselves into that published Host.
+
+When a supporting release is available, update the Server and complete
+CLI/Adapter bundle together. Each configured Instance must affirm Canonical v5
+for Codex and publication target v5 for Claude, in addition to the existing
+capture/adoption requirements. New CLI discovery explicitly opts into v5;
+the Server's default Canonical capability list remains v2/v3/v4 so the published
+0.5.10 CLI remains compatible with a newer Server. Local Host support is also
+checked before opening source bytes. An unsupported or malformed capability
+refuses capture before checkpoint or pending progress changes; it cannot discard
+identity facts to continue under v3/v4.
+
+Finish pending recovery, choose **Stop sync**, close older consoles and preserve
+the same `ATAPE_HOME`, credentials, configuration, capture journals and Raw
+receipts during the transition. Select a complete compatible bundle before
+**Start sync**. Available source history replays once using stable Event IDs and
+higher projection revisions. Unavailable history remains unidentified; accepted
+frozen publications and Raw acknowledgements are not rewritten.
+
+Codex writes a v6 cursor after the new projection. An older Codex Adapter cannot
+read it, so recover forward through the compatible runtime and retained progress.
+New Claude v5 source recovery metadata also carries an explicit v5 profile that
+older Hosts reject. The earlier v4 encoding/0.5.8 recovery evidence does not
+establish a rollback path for v5. Do not delete checkpoints or journals to force
+an old reader to start. The existing stopped intent remains authoritative.
+
+Analytics v4 uses stable identity-and-kind group keys; an older Server can still
+provide its v1–v3 label report, including v3 activity where supported. That Web
+read fallback does not authorize v5 source capture against an older Server.
+See [Session Analytics](../session-analytics.md#stable-tool-grouping),
+[the v5 ingestion contract](../api/canonical-ingestion.md#v5-stable-native-tool-identity)
+and [ADR-0124](../architecture/adr/0124-stable-native-tool-identity.md).
 
 ### Built-in CLI updates
 

@@ -9,9 +9,9 @@ import (
 	"github.com/SingleMai/ATape/server/internal/ingestion"
 )
 
-func TestToolIdentityRequiresV4AndKeepsUnknownClocks(t *testing.T) {
-	for _, profile := range []string{ingestion.LegacyCanonicalProfileVersion, ingestion.CanonicalProfileVersion, ingestion.UnknownTimeCanonicalProfileVersion, ingestion.ToolIdentityCanonicalProfileVersion} {
-		for _, identity := range []string{`{"type":"mcp","server":"claude_ai_mail","name":"send"}`, `{"type":"skill","name":"commit"}`, `null`} {
+func TestToolIdentityProfilesAndUnknownClocks(t *testing.T) {
+	for _, profile := range []string{ingestion.LegacyCanonicalProfileVersion, ingestion.CanonicalProfileVersion, ingestion.UnknownTimeCanonicalProfileVersion, ingestion.ToolIdentityCanonicalProfileVersion, ingestion.StableToolCanonicalProfileVersion} {
+		for _, identity := range []string{`{"type":"mcp","server":"claude_ai_mail","name":"send"}`, `{"type":"skill","name":"commit"}`, `{"type":"tool","name":"exec_command"}`, `null`} {
 			t.Run(profile+"/"+identity, func(t *testing.T) {
 				store := testStore()
 				batch := validBatch()
@@ -20,7 +20,7 @@ func TestToolIdentityRequiresV4AndKeepsUnknownClocks(t *testing.T) {
 				batch.Events[1].ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"identity-call","title":"Recorded tool","_meta":{"atape.dev/tool-identity":` + identity + `},"rawInput":{"secret":"source-only"}}`
 				writer := ingestion.NewIngestor(store)
 				created, err := writer.ApplyBatch(t.Context(), cliPrincipal(), batch)
-				if profile != ingestion.ToolIdentityCanonicalProfileVersion {
+				if profile != ingestion.ToolIdentityCanonicalProfileVersion && profile != ingestion.StableToolCanonicalProfileVersion || strings.Contains(identity, `"type":"tool"`) && profile != ingestion.StableToolCanonicalProfileVersion {
 					if err == nil {
 						t.Fatal("old profile admitted identity metadata")
 					}
@@ -161,5 +161,31 @@ func TestToolIdentityUnicodeEscapesStayExact(t *testing.T) {
 	batch.Events[1].ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"call","title":"Tool","rawInput":"\ud800"}`
 	if _, err := ingestion.NewIngestor(testStore()).ApplyBatch(t.Context(), cliPrincipal(), batch); err != nil {
 		t.Fatal("historical payload parsing changed: ", err)
+	}
+}
+
+func TestOrdinaryToolIdentityClosedV5Bounds(t *testing.T) {
+	for _, identity := range []string{
+		`{"type":"tool","name":"exec_command","server":"extra"}`,
+		`{"type":"tool","name":"exec_command","extra":true}`,
+		`{"type":"tool","name":" exec_command"}`,
+		`{"type":"tool","name":""}`,
+		`{"type":"tool","name":"\ud800"}`,
+		`{"type":"tool","name":"` + strings.Repeat("界", 167) + `"}`,
+	} {
+		b := validBatch()
+		b.CanonicalProfileVersion = ingestion.StableToolCanonicalProfileVersion
+		b.Events[1].Kind = "tool_call"
+		b.Events[1].ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"one","title":"Display","_meta":{"atape.dev/tool-identity":` + identity + `}}`
+		if _, err := ingestion.NewIngestor(testStore()).ApplyBatch(t.Context(), cliPrincipal(), b); err == nil {
+			t.Fatalf("invalid ordinary tool identity admitted: %s", identity)
+		}
+	}
+	b := validBatch()
+	b.CanonicalProfileVersion = ingestion.StableToolCanonicalProfileVersion
+	b.Events[1].Kind = "tool_call"
+	b.Events[1].ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"one","title":"Display","_meta":{"atape.dev/tool-identity":{"type":"tool","name":"` + strings.Repeat("界", 166) + `ab"}}}`
+	if _, err := ingestion.NewIngestor(testStore()).ApplyBatch(t.Context(), cliPrincipal(), b); err != nil {
+		t.Fatalf("500-byte ordinary identity rejected: %v", err)
 	}
 }

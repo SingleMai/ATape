@@ -1,5 +1,5 @@
 import { CLICredentialStore } from "@atape/application"
-import { AdapterManifest, AdapterProtocolVersion, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfiles34, SourceCaptureVersion, SourceCaptureVersion2, CanonicalCapabilitiesProtocol, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4,
+import { AdapterManifest, AdapterProtocolVersion, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfiles34, SourceCaptureVersion, SourceCaptureVersion2, CanonicalCapabilitiesProtocol, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion5,
   emptyClientConfig, type ClientConfig, type StoredCLICredential } from "@atape/domain"
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -23,7 +23,7 @@ const capabilities = {
     reservations: 16, reservationLifetimeMs: 60_000, leaseLifetimeMs: 30_000 }, statusPageSize: 100, reclaimPageSize: 32
 }
 const canonicalCapabilities = { protocol: CanonicalCapabilitiesProtocol,
-  canonicalProfiles: [CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4] }
+  canonicalProfiles: [CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion5] }
 const credential = (origin = "https://atape.net", id = "user-1"): StoredCLICredential => ({
   version: 1, instanceOrigin: origin, apiOrigin: origin.replace("https://", "https://api."),
   credential: "atc_v1_private-preflight", credentialId: `credential-${id}`, capabilityVersion: "atape-cli.v1",
@@ -104,7 +104,7 @@ const fixture = async (adapterId: "claude" | "cursor" | "codex" = "claude") => {
 
 describe("capture migration read-only prerequisite Interface", () => {
   it.each([false, true])("admits an active legacy v3 candidate only after explicit Server affirmation (%s)", async supported => {
-    const f = await fixture("codex"); await f.saveCredential(credential())
+    const f = await fixture("codex"); await f.saveLegacyProfile(); await f.saveCredential(credential())
     const before = await snapshot(f.home)
     const fetch = (async (input, init) => {
       const original = await f.fetch(input, init)
@@ -121,7 +121,7 @@ describe("capture migration read-only prerequisite Interface", () => {
     expect(await snapshot(f.home)).toEqual(before)
   })
   it.each([404, 405, 501])("admits an older Server only through genuine target-v3 support when its direct route is absent (%s)", async status => {
-    const f = await fixture("codex"); await f.saveCredential(credential())
+    const f = await fixture("codex"); await f.saveLegacyProfile(); await f.saveCredential(credential())
     const before = await snapshot(f.home)
     const fetch = (async (input, init) => {
       const original = await f.fetch(input, init)
@@ -190,6 +190,7 @@ describe("capture migration read-only prerequisite Interface", () => {
     { canonical: false, publication: true }, { canonical: true, publication: false }, { canonical: true, publication: true }
   ])("requires direct Codex legacy v3 and the independent v4 publication capability ($canonical/$publication)", async ({ canonical, publication }) => {
     const f = await fixture(), codex = await fixture("codex")
+    await codex.saveLegacyProfile()
     await f.saveCredential(credential()); await f.saveManifest(SourceCaptureVersion2, PublicationTargetProfile4)
     await cp(codex.root, join(f.paths.adapterDirectory, "node_modules", "@atape", "adapter-codex"), { recursive: true })
     const config = { ...f.config, adapters: [...f.config.adapters, ...codex.config.adapters], enabledAdapterIds: ["claude", "codex"] }
@@ -357,7 +358,7 @@ describe("capture migration read-only prerequisite Interface", () => {
     expect(await snapshot(f.home)).toEqual(before)
   })
 
-  it.each([null, "atape.publication-target.v5", PublicationTargetProfile3])(
+  it.each([null, "atape.publication-target.v6", PublicationTargetProfile3])(
     "rejects an unsupported or misplaced manifest declaration before remote work (%j)", async publicationTargetProfile => {
       const f = await fixture(); await f.saveCredential(credential())
       await f.saveManifest(publicationTargetProfile === PublicationTargetProfile3 ? SourceCaptureVersion : SourceCaptureVersion2,

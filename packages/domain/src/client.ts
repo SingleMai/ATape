@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4 } from "./publicationProfiles.ts"
+import { PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfile5 } from "./publicationProfiles.ts"
 
 export const ClientConfigVersion = 3 as const
 export const AdapterProtocolVersion = "atape.adapter.v1alpha1" as const
@@ -66,8 +66,8 @@ export const AdapterManifest = Schema.Struct({
   gitAttribution: Schema.optionalKey(Schema.Literal(GitAttributionVersion)),
   rawCapturePolicy: Schema.optionalKey(Schema.Literal("atape.raw-capture.v1")),
   sourceCapture: Schema.optionalKey(Schema.Literals([SourceCaptureVersion, SourceCaptureVersion2])),
-  legacyCanonicalProfile: Schema.optionalKey(Schema.Literal("atape.acp-centered.v3")),
-  publicationTargetProfile: Schema.optionalKey(Schema.Literals([PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4])),
+  legacyCanonicalProfile: Schema.optionalKey(Schema.Literals(["atape.acp-centered.v3", "atape.acp-centered.v5"])),
+  publicationTargetProfile: Schema.optionalKey(Schema.Literals([PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfile5])),
   legacyMigration: Schema.optionalKey(Schema.Literal(LegacyMigrationVersion)),
   newSession: Schema.optionalKey(Schema.Literal(NewSessionVersion))
 }).check(Schema.makeFilter(manifest =>

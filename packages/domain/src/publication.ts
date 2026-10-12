@@ -1,8 +1,8 @@
 import { Schema } from "effect"
 import { AdapterThread } from "./collector.ts"
-import { PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4 } from "./publicationProfiles.ts"
+import { PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfile5 } from "./publicationProfiles.ts"
 
-export { PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfiles34 } from "./publicationProfiles.ts"
+export { PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfile5, PublicationTargetProfiles34, PublicationTargetProfiles345 } from "./publicationProfiles.ts"
 
 export const PublicationProtocol = "atape.publication.v1"
 const count = (maximum = Number.MAX_SAFE_INTEGER, minimum = 0) => Schema.Number.check(
@@ -37,7 +37,7 @@ export const PublicationPage = Schema.Struct({ attempt: PublicationAttempt,
   parts: Schema.NullOr(Schema.Array(PublicationPart).check(Schema.isMaxLength(100))) })
 export const PublicationCapabilities = Schema.Struct({
   protocol: Schema.Literal(PublicationProtocol), targetProfile: Schema.Literal(PublicationTargetProfile),
-  targetProfiles: Schema.optionalKey(Schema.Array(Schema.Literals([PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4])).check(Schema.isMaxLength(4))),
+  targetProfiles: Schema.optionalKey(Schema.Array(Schema.Literals([PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfile5])).check(Schema.isMaxLength(5))),
   legacyAdoption: Schema.optionalKey(Schema.Boolean),
   limits: Schema.Struct({ partBytes: count(4 * 1024 * 1024, 1), targetBytes: count(1024 * 1024 * 1024, 1),
     userPendingBytes: count(16 * 1024 * 1024 * 1024, 1), parts: count(4096, 1), reservations: count(128, 1),

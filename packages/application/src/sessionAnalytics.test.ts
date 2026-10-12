@@ -1,7 +1,7 @@
 import type { SessionAnalytics, SessionAnalyticsQuery } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import { canFilterSessionAnalyticsTool, selectSessionAnalyticsEvidence, readSessionAnalytics, SessionAnalyticsGateway } from "./sessionAnalytics"
+import { canFilterSessionAnalyticsTool, sessionAnalyticsToolSelections, selectSessionAnalyticsEvidence, readSessionAnalytics, SessionAnalyticsGateway } from "./sessionAnalytics"
 
 const value: SessionAnalytics = {
   snapshot: "one", analyticsVersion: 1, sessionId: "session", captureStatus: "complete",
@@ -23,6 +23,18 @@ describe("SessionAnalytics Module", () => {
     expect(canFilterSessionAnalyticsTool("a".repeat(501))).toBe(false)
     expect(canFilterSessionAnalyticsTool("界".repeat(166))).toBe(true)
     expect(canFilterSessionAnalyticsTool("界".repeat(167))).toBe(false)
+  })
+  it("selects v4 identity-and-kind rows by key while retaining legacy label filtering", () => {
+    const oldRow = { name: "界".repeat(167), kind: "execute", calls: 1, completed: 0, failed: 0, pending: 0, inProgress: 0, unknown: 1 }
+    expect(sessionAnalyticsToolSelections({ ...value, tools: [oldRow] })[0]!.filter).toBeNull()
+    const key = `tool:${"a".repeat(64)}`
+    const report: SessionAnalytics = { ...activityValue, analyticsVersion: 4,
+      summary: { ...value.summary, toolCalls: 1, identifiedToolCalls: 1, unidentifiedToolCalls: 0 },
+      tools: [{ ...oldRow, key, identity: { type: "mcp", server: "界".repeat(166), name: "界".repeat(166) },
+        name: `${"界".repeat(166)}/${"界".repeat(166)}` }] }
+    expect(sessionAnalyticsToolSelections(report)[0]!.filter).toBe(key)
+    expect(selectSessionAnalyticsEvidence({ metric: "unknown_tools", tool: key, thread: "root" }, "one"))
+      .toEqual({ metric: "unknown_tools", tool: key, thread: "root", snapshot: "one" })
   })
   it("reads through the remote Interface with a snapshot-bound evidence query", async () => {
     const query: SessionAnalyticsQuery = { snapshot: "one", metric: "failed_tools", thread: "root", tool: "Read", cursor: "next", limit: 20 }
@@ -67,9 +79,17 @@ describe("SessionAnalytics Module", () => {
     } })
     expect(await Effect.runPromise(readSessionAnalytics("session", query).pipe(Effect.provide(layer)))).toEqual(scoped)
   })
-  it("rejects a v3 response for a different activity Thread scope", async () => {
-    const error = await Effect.runPromise(readSessionAnalytics("session", { thread: "child" }).pipe(Effect.provide(provide(activityValue)), Effect.flip))
+  it.each([3, 4] as const)("rejects a v%s response for a different activity Thread scope", async analyticsVersion => {
+    const result: SessionAnalytics = analyticsVersion === 3 ? activityValue : { ...activityValue, analyticsVersion,
+      summary: { ...value.summary, identifiedToolCalls: 0, unidentifiedToolCalls: 0 }, tools: [] }
+    const error = await Effect.runPromise(readSessionAnalytics("session", { thread: "child" }).pipe(Effect.provide(provide(result)), Effect.flip))
     expect(error.reason).toBe("decode")
+  })
+  it("reads v4 records without losing required activity or opaque range selection", async () => {
+    const report: SessionAnalytics = { ...activityValue, analyticsVersion: 4,
+      summary: { ...value.summary, identifiedToolCalls: 0, unidentifiedToolCalls: 0 }, tools: [] }
+    expect(await Effect.runPromise(readSessionAnalytics("session", { metric: "records", snapshot: "one", range: "opaque-unplaced" })
+      .pipe(Effect.provide(provide(report))))).toEqual(report)
   })
   it("keeps old reports available without interpreting absent activity as zero", async () => {
     const report = await Effect.runPromise(readSessionAnalytics("session").pipe(Effect.provide(provide())))

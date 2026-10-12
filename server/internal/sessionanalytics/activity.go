@@ -50,7 +50,7 @@ func clockQuality(event canonical.EventRecord) string {
 	if event.OccurredAt.IsZero() {
 		return "unknown"
 	}
-	if event.SchemaVersion == "atape.acp-centered.v3" || event.SchemaVersion == "atape.acp-centered.v4" {
+	if event.SchemaVersion == "atape.acp-centered.v3" || event.SchemaVersion == "atape.acp-centered.v4" || event.SchemaVersion == "atape.acp-centered.v5" {
 		return "recorded"
 	}
 	return "legacy"
@@ -191,7 +191,7 @@ func (s *activitySelection) matches(event canonical.EventRecord) bool {
 }
 
 func activityRange(snapshot canonical.AnalyticsSnapshot, q Query, mode string, index int) string {
-	encoded, _ := json.Marshal([]any{ActivityVersion, snapshot.Session.ID, snapshot.SnapshotToken, q.Thread, mode, index})
+	encoded, _ := json.Marshal([]any{q.AnalyticsVersion, snapshot.Session.ID, snapshot.SnapshotToken, q.Thread, mode, index})
 	sum := sha256.Sum256(encoded)
 	token, _ := json.Marshal(struct {
 		Binding string `json:"b"`

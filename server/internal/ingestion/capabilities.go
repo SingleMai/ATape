@@ -10,7 +10,7 @@ type Capabilities struct {
 }
 
 var modernCanonicalProfiles = [...]string{
-	CanonicalProfileVersion, UnknownTimeCanonicalProfileVersion, ToolIdentityCanonicalProfileVersion,
+	CanonicalProfileVersion, UnknownTimeCanonicalProfileVersion, ToolIdentityCanonicalProfileVersion, StableToolCanonicalProfileVersion,
 }
 
 func (i *Ingestor) Capabilities() Capabilities {

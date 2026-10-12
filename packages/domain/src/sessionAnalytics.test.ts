@@ -33,6 +33,24 @@ describe("Session Analytics versioned representation", () => {
     expect(() => decode({ ...v3, evidence: common.evidence })).toThrow()
     expect(() => decode({ ...v3, evidence: { items: [{ ...v3.evidence.items[0], clockQuality: "verified" }] } })).toThrow()
   })
+  it("requires stable v4 row keys, nullable closed identities and explicit coverage", () => {
+    const tool = { key: `tool:${"a".repeat(64)}`, identity: { type: "tool", name: "exec_command" },
+      name: "exec_command", kind: "execute", calls: 1, completed: 0, failed: 0, pending: 0, inProgress: 0, unknown: 1 }
+    const v4 = { ...common, analyticsVersion: 4, capabilities, activity,
+      summary: { ...common.summary, toolCalls: 1, identifiedToolCalls: 1, unidentifiedToolCalls: 0 }, tools: [tool],
+      evidence: { items: common.evidence.items.map(item => ({ ...item, clockQuality: "unknown" })) } }
+    expect(decode(v4)).toEqual(v4)
+    expect(decode({ ...v4, tools: [{ ...tool, identity: null, name: "unknown" }] })).toMatchObject({ tools: [{ identity: null }] })
+    const { key: _key, ...missingKey } = tool
+    const { identity: _identity, ...missingIdentity } = tool
+    const { unidentifiedToolCalls: _count, ...missingCoverage } = v4.summary
+    for (const malformed of [
+      { ...v4, tools: [missingKey] }, { ...v4, tools: [missingIdentity] }, { ...v4, summary: missingCoverage },
+      { ...v4, tools: [{ ...tool, key: "exec_command" }] },
+      { ...v4, tools: [{ ...tool, identity: { ...tool.identity, command: "pnpm check" } }] },
+      { ...v4, evidence: common.evidence }
+    ]) expect(() => decode(malformed)).toThrow()
+  })
   it("preserves zero point spans and null all-unplaced spans", () => {
     expect(Schema.decodeUnknownSync(SessionAnalyticsActivity)(activity).recordSpanMilliseconds).toBe(0)
     const unplaced = { ...activity, recordedTimeEvents: 0, unknownTimeEvents: 2,

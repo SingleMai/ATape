@@ -88,7 +88,7 @@ func ParseToolUpdate(text string) (*ToolUpdate, error) {
 			}
 			value := tool.Meta.Identity
 			if !identityText(value.Name) || !validIdentityUnicode(values["name"]) || value.Type == "mcp" && (!identityText(value.Server) || !validIdentityUnicode(values["server"]) || len(values) != 3) ||
-				value.Type == "skill" && len(values) != 2 || !stringIn(value.Type, "mcp", "skill") {
+				(value.Type == "skill" || value.Type == "tool") && len(values) != 2 || !stringIn(value.Type, "mcp", "skill", "tool") {
 				return nil, errTool
 			}
 			for key := range values {

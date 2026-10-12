@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { AcpToolIdentity } from "./collector.ts"
 
 export const SessionAnalyticsMetric = Schema.Literals(["tools", "failed_tools", "unknown_tools", "user_inputs", "thoughts", "threads", "mcp_tools", "skills", "records"])
 export type SessionAnalyticsMetric = typeof SessionAnalyticsMetric.Type
@@ -62,6 +63,12 @@ const AnalyticsFields = {
 const Outcomes = {
   calls: Count, completed: Count, failed: Count, pending: Count, inProgress: Count, unknown: Count
 }
+const StableToolKey = Schema.String.check(Schema.makeFilter(value => /^tool:[0-9a-f]{64}$/.test(value)))
+const ActivityEvidence = Schema.Struct({
+  items: Schema.Array(Schema.Struct({ ...AnalyticsFields.evidence.fields.items.value.fields,
+    clockQuality: SessionAnalyticsClockQuality })),
+  nextCursor: Schema.optionalKey(Schema.String)
+})
 export const SessionAnalyticsCapabilities = Schema.Struct({
   mcpCalls: Count,
   skillCalls: Count,
@@ -78,11 +85,14 @@ export const SessionAnalytics = Schema.Union([
   Schema.Struct({ analyticsVersion: Schema.Literal(2), ...AnalyticsFields, capabilities: SessionAnalyticsCapabilities }),
   Schema.Struct({ analyticsVersion: Schema.Literal(3), ...AnalyticsFields, capabilities: SessionAnalyticsCapabilities,
     activity: SessionAnalyticsActivity,
-    evidence: Schema.Struct({
-      items: Schema.Array(Schema.Struct({ ...AnalyticsFields.evidence.fields.items.value.fields,
-        clockQuality: SessionAnalyticsClockQuality })),
-      nextCursor: Schema.optionalKey(Schema.String)
-    })
+    evidence: ActivityEvidence
+  }),
+  Schema.Struct({ analyticsVersion: Schema.Literal(4), ...AnalyticsFields, capabilities: SessionAnalyticsCapabilities,
+    summary: Schema.Struct({ ...AnalyticsFields.summary.fields, identifiedToolCalls: Count, unidentifiedToolCalls: Count }),
+    tools: Schema.Array(Schema.Struct({ key: StableToolKey, identity: Schema.NullOr(AcpToolIdentity),
+      name: Schema.String, kind: Schema.String, ...Outcomes })),
+    activity: SessionAnalyticsActivity,
+    evidence: ActivityEvidence
   })
 ])
 export type SessionAnalytics = typeof SessionAnalytics.Type

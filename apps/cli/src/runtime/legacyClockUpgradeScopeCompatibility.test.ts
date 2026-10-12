@@ -1,5 +1,5 @@
 import { CLICredentialStore } from "@atape/application"
-import { CanonicalCapabilitiesProtocol, CanonicalProfileVersion3, emptyClientConfig, type ClientConfig, type StoredCLICredential } from "@atape/domain"
+import { CanonicalCapabilitiesProtocol, CanonicalProfileVersion5, emptyClientConfig, type ClientConfig, type StoredCLICredential } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
@@ -12,7 +12,7 @@ import { defaultNodeClientPaths } from "./clientPaths.ts"
 import { inspectCaptureMigrationPrerequisitesScope, preflightCaptureMigrationPrerequisites } from "./captureMigrationPrerequisites.ts"
 import { legacyClockHostV059 } from "./fixtures/legacy-clock-host-v059.ts"
 
-it("preserves strict old-parent scope binding: active Codex v3 differs, stopped scope matches", async () => {
+it("preserves strict old-parent scope binding: active Codex v5 differs, stopped scope matches", async () => {
   const historical = await legacyClockHostV059()
   const home = await realpath(await mkdtemp(join(tmpdir(), "atape-old-codex-upgrade-scope-")))
   const paths = defaultNodeClientPaths({ ATAPE_HOME: home })
@@ -21,7 +21,7 @@ it("preserves strict old-parent scope binding: active Codex v3 differs, stopped 
     const old = historical.Effect
     const manifestBytes = await readFile(new URL("../../../../adapters/codex/package.json", import.meta.url))
     const manifest = JSON.parse(manifestBytes.toString("utf8"))
-    expect(manifest.atapeAdapter.legacyCanonicalProfile).toBe(CanonicalProfileVersion3)
+    expect(manifest.atapeAdapter.legacyCanonicalProfile).toBe(CanonicalProfileVersion5)
     const root = join(paths.adapterDirectory, "node_modules", "@atape", "adapter-codex")
     const entry = resolve(root, manifest.atapeAdapter.entry)
     await mkdir(dirname(entry), { recursive: true })
@@ -53,7 +53,7 @@ it("preserves strict old-parent scope binding: active Codex v3 differs, stopped 
     const currentHTTP = Layer.succeed(AuthenticatedHTTPClient, { request: input => Effect.sync(() => {
       currentRequests.push(input.path)
       if (input.path !== "/api/v1/ingestion/canonical/capabilities") throw Error("Unexpected capability request")
-      return { status: 200, body: { protocol: CanonicalCapabilitiesProtocol, canonicalProfiles: [CanonicalProfileVersion3] } }
+      return { status: 200, body: { protocol: CanonicalCapabilitiesProtocol, canonicalProfiles: [CanonicalProfileVersion5] } }
     }) })
     const oldHTTP = historical.Layer.succeed(historical.AuthenticatedHTTPClient, { request: input => old.sync(() => {
       oldRequests.push(input.path)

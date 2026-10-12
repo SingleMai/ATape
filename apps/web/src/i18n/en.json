@@ -662,5 +662,15 @@
   "analytics.unplacedCounts": "{unknown} unknown time · {legacy} legacy time",
   "analytics.clockQuality.recorded": "Recorded time",
   "analytics.clockQuality.unknown": "Time unknown",
-  "analytics.clockQuality.legacy": "Legacy time"
+  "analytics.clockQuality.legacy": "Legacy time",
+  "analytics.toolName": "Tool name",
+  "analytics.stableTools": "Recorded tools",
+  "analytics.identityType": "Identity type",
+  "analytics.identity.tool": "Tool",
+  "analytics.identity.skill": "Skill",
+  "analytics.identifiedToolCalls": "Calls with tool identity",
+  "analytics.unidentifiedToolCalls": "Calls without tool identity",
+  "analytics.stableToolMeaning": "Tools are grouped by their recorded native identity and kind. Different command titles can belong to the same tool; evidence retains each call's last title and explicit outcome.",
+  "analytics.toolIdentityCoverage": "Unknown means no usable identity was captured, including older records, unsupported source signals or redaction. Command titles are never used to guess a tool name.",
+  "analytics.allToolNames": "All tools"
 }

@@ -51,16 +51,58 @@ func assertHTTPUnknownTimeContract(t *testing.T, h *Handler, pool *pgxpool.Pool,
 		}
 		return b
 	}
+	for _, optIn := range []bool{false, true} {
+		r := httptest.NewRequest("GET", "/api/v1/ingestion/canonical/capabilities", nil)
+		r.Header.Set("Authorization", "Bearer "+credential)
+		if optIn {
+			r.Header.Set("ATape-Accept-Canonical-Profile", ingestion.StableToolCanonicalProfileVersion)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		var capabilities ingestion.Capabilities
+		decodeResponse(t, w, &capabilities)
+		want := []string{ingestion.CanonicalProfileVersion, ingestion.UnknownTimeCanonicalProfileVersion, ingestion.ToolIdentityCanonicalProfileVersion}
+		if optIn {
+			want = append(want, ingestion.StableToolCanonicalProfileVersion)
+		}
+		if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" || !slices.Equal(capabilities.CanonicalProfiles, want) {
+			t.Fatalf("authenticated Canonical profile negotiation: %d %s", w.Code, w.Body.String())
+		}
+	}
+	// Opt-in is a representation request, not an alternate authentication path.
+	for _, withCookie := range []bool{false, true} {
+		r := httptest.NewRequest("GET", "/api/v1/ingestion/canonical/capabilities", nil)
+		r.Header.Set("ATape-Accept-Canonical-Profile", ingestion.StableToolCanonicalProfileVersion)
+		if withCookie {
+			r.AddCookie(cookie)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 401 {
+			t.Fatalf("Canonical opt-in changed CLI authentication: %d %s", w.Code, w.Body.String())
+		}
+	}
+	invalidQuery := httptest.NewRequest("GET", "/api/v1/ingestion/canonical/capabilities?profile=atape.acp-centered.v5", nil)
+	invalidQuery.Header.Set("Authorization", "Bearer "+credential)
+	invalidQuery.Header.Set("ATape-Accept-Canonical-Profile", ingestion.StableToolCanonicalProfileVersion)
+	queryResponse := httptest.NewRecorder()
+	h.ServeHTTP(queryResponse, invalidQuery)
+	if queryResponse.Code != 400 {
+		t.Fatalf("Canonical opt-in allowed query parameters: %d", queryResponse.Code)
+	}
 	for _, negotiation := range []struct {
 		name    string
 		headers []string
 		v3      bool
 		v4      bool
+		v5      bool
 	}{
 		{name: "legacy default"},
 		{name: "empty", headers: []string{""}},
 		{name: "v2 only", headers: []string{publication.RetentionTargetProfile}},
-		{name: "future unknown", headers: []string{"atape.publication-target.v5"}},
+		{name: "future unknown", headers: []string{"atape.publication-target.v6"}},
+		{name: "exact v5", headers: []string{publication.StableToolTargetProfile}, v5: true},
+		{name: "all extensions", headers: []string{publication.StableToolTargetProfile + ", " + publication.ToolIdentityTargetProfile + ", " + publication.UnknownTimeTargetProfile}, v3: true, v4: true, v5: true},
 		{name: "exact v4", headers: []string{publication.ToolIdentityTargetProfile}, v4: true},
 		{name: "unknown syntax", headers: []string{publication.UnknownTimeTargetProfile + ";q=1"}},
 		{name: "exact v3", headers: []string{publication.UnknownTimeTargetProfile}, v3: true},
@@ -86,6 +128,9 @@ func assertHTTPUnknownTimeContract(t *testing.T, h *Handler, pool *pgxpool.Pool,
 		}
 		if negotiation.v4 {
 			want = append(want, publication.ToolIdentityTargetProfile)
+		}
+		if negotiation.v5 {
+			want = append(want, publication.StableToolTargetProfile)
 		}
 		if !slices.Equal(caps.TargetProfiles, want) || caps.TargetProfile != publication.TargetProfile {
 			t.Fatalf("%s capabilities: %s", negotiation.name, w.Body.String())

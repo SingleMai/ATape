@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { analyticsFixture, capabilitiesFixture } from "../test/sessionAnalyticsFixture"
+import { activityFixture, analyticsFixture, capabilitiesFixture, executeToolKey, literalUnknownToolFixture, stableToolsFixture, unknownToolKey } from "../test/sessionAnalyticsFixture"
 import { activityHead, activityReplacement, activityReport, activityResponse, activitySnapshot,
   bucketName, childBucketRange, childPageCursor, unplacedRecords } from "../test/sessionActivityFixture"
 
@@ -265,7 +265,7 @@ const activityAPI = async (page: Page) => {
   await page.route("**/api/v1/sessions/session-reader/analytics*", async route => {
     const url = new URL(route.request().url()); reads.push(url)
     expect(route.request().method()).toBe("GET")
-    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v3+json, application/json")
+    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
     expect(route.request().headers()).not.toHaveProperty("atape-accept-analytics-version")
     await hold?.(url)
     if (mode === "changed") { await route.fulfill({ status: 409, json: { code: "refresh_required", detail: "The selected snapshot changed." } }); return }
@@ -458,7 +458,7 @@ test("old v1 and v2 Servers expose unavailable activity while retaining their ex
   const reads: URL[] = []
   await page.route("**/api/v1/sessions/session-reader/analytics*", async route => {
     const url = new URL(route.request().url()); reads.push(url)
-    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v3+json, application/json")
+    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
     expect(url.searchParams.has("range")).toBe(false)
     expect(url.searchParams.get("metric")).not.toBe("records")
     await route.fulfill({ json: version === 1 ? analyticsFixture : capabilitiesFixture })
@@ -534,3 +534,166 @@ test("a hidden pinned Reader auto-refresh cannot leave analysis, and returning r
   await expect(page).not.toHaveURL(/snapshot=|head=|event=|analysis=/)
   expect(api.violations).toEqual([])
 })
+
+const stableToolAPI = async (page: Page) => {
+  const reads: URL[] = [], violations: string[] = []
+  let mode: "ready" | "changed" | "replacement" | "denied" = "ready"
+  await page.route("**/api/v1/sessions/session-reader/analytics*", async route => {
+    const url = new URL(route.request().url()); reads.push(url)
+    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
+    if (mode === "changed") { await route.fulfill({ status: 409, json: { code: "refresh_required", detail: "Changed" } }); return }
+    if (mode === "denied") { await route.fulfill({ status: 404, json: { code: "not_found", detail: "Unavailable" } }); return }
+    if (mode === "replacement") {
+      if (JSON.stringify(Object.fromEntries(url.searchParams)) !== JSON.stringify({ metric: "tools" })) {
+        violations.push("A full refresh reused an expired identity selection.")
+        await route.fulfill({ status: 422, json: { code: "validation_failed", detail: violations.at(-1) } }); return
+      }
+      await route.fulfill({ json: { ...stableToolsFixture, snapshot: "snapshot-two", tools: [], evidence: { items: [] } } }); return
+    }
+    if (url.searchParams.has("tool") && ![executeToolKey, unknownToolKey].includes(url.searchParams.get("tool")!)) {
+      violations.push("A native tool selection sent a command title instead of its row key.")
+      await route.fulfill({ status: 422, json: { code: "validation_failed", detail: violations.at(-1) } }); return
+    }
+    const items = stableToolsFixture.evidence.items.filter(item => !url.searchParams.has("thread") || item.threadId === url.searchParams.get("thread"))
+    const selected = url.searchParams.get("tool") === unknownToolKey ? [] :
+      url.searchParams.has("cursor") ? items.slice(1) : url.searchParams.get("metric") === "failed_tools" ? items.slice(0, 1) : items
+    await route.fulfill({ json: { ...stableToolsFixture,
+      activity: { ...stableToolsFixture.activity, scopeThreadId: url.searchParams.get("thread") },
+      evidence: { items: selected, ...(url.searchParams.has("cursor") || selected.length < 2 ? {} : { nextCursor: "stable-tools-next" }) } } })
+  })
+  return { reads, violations, mode: (next: typeof mode) => { mode = next } }
+}
+
+test("v4 groups different command titles by native tool identity and retains the key through Reader and Back", async ({ page }) => {
+  const api = await stableToolAPI(page), readerReads: URL[] = []
+  let readerChanged = false
+  await page.route("**/api/v1/sessions/session-reader?*", async route => {
+    const url = new URL(route.request().url()); readerReads.push(url)
+    expect(url.searchParams.has("tool")).toBe(false)
+    if (readerChanged && url.searchParams.has("at")) {
+      await route.fulfill({ status: 409, json: { code: "refresh_required", detail: "The Reader head changed." } }); return
+    }
+    const response = await route.fetch({ url: `${url.origin}${url.pathname}?thread=root` }), value = await response.json()
+    if (url.searchParams.has("at")) {
+      expect(Object.fromEntries(url.searchParams)).toMatchObject({ snapshot: "snapshot-one", head: "head-one", thread: "child", at: "tool-2" })
+      value.snapshot = "snapshot-one"; value.head = "head-one"
+      value.thread = { id: "child", label: "Captured child", captureStatus: "complete", parentThreadId: "root" }
+      value.threadPath = [{ id: "root", label: "Root" }, { id: "child", label: "Captured child" }]
+      value.events = [
+        { id: "prompt", kind: "message", author: "User", text: "Inspect files", occurredAt: null },
+        { id: "tool-2", kind: "tool_result", author: "Codex", toolLabel: "Run rg --files", text: "Captured command evidence", occurredAt: null,
+          tool: { sessionUpdate: "tool_call_update", toolCallId: "call-2", title: "Run rg --files", kind: "execute", status: "completed" } }
+      ]
+    }
+    await route.fulfill({ json: value })
+  })
+  await page.goto(path)
+  await page.getByRole("button", { name: "Session analysis", exact: true }).click()
+  const panel = page.getByRole("region", { name: "Session analysis", exact: true })
+  await expect(panel.getByRole("heading", { name: "Recorded tools", exact: true })).toBeVisible()
+  await expect(panel.getByText("Calls with tool identity", { exact: true }).locator("..")).toContainText("2")
+  await expect(panel.getByText("Calls without tool identity", { exact: true }).locator("..")).toContainText("1")
+  await expect(panel.getByRole("button", { name: "exec_command", exact: true })).toHaveCount(1)
+  await panel.getByRole("button", { name: "exec_command", exact: true }).click()
+  await expect(panel.getByLabel("Tool name", { exact: true })).toHaveValue(executeToolKey)
+  await expect(panel.locator(".analytics-evidence-list").getByRole("link")).toHaveText(["Run pnpm check", "Run rg --files"])
+  expect(Object.fromEntries(api.reads.at(-1)!.searchParams)).toMatchObject({ snapshot: "snapshot-one", metric: "tools", tool: executeToolKey })
+  await panel.getByRole("button", { name: "Next evidence page", exact: true }).click()
+  await expect(panel.locator(".analytics-evidence-list").getByRole("link")).toHaveText(["Run rg --files"])
+  expect(api.reads.at(-1)!.searchParams.get("cursor")).toBe("stable-tools-next")
+  const link = panel.getByRole("link", { name: "Run rg --files", exact: true })
+  await expect(link).toHaveAttribute("href", /snapshot=snapshot-one/)
+  await link.click()
+  await expect(page.locator("#event-tool-2")).toBeFocused()
+  await expect(page.locator(".narrative-activity:has(#event-tool-2)")).toHaveAttribute("open", "")
+  await page.goBack()
+  await expect(panel.getByLabel("Tool name", { exact: true })).toHaveValue(executeToolKey)
+  await expect(panel.getByRole("button", { name: "First evidence page", exact: true })).toBeEnabled()
+  await expect(panel.locator(".analytics-evidence-list").getByRole("link")).toHaveText(["Run rg --files"])
+  readerChanged = true
+  await panel.getByRole("link", { name: "Run rg --files", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "Conversation has changed", exact: true })).toBeVisible()
+  await expect(page.locator("#event-tool-2")).toHaveCount(0)
+  await page.goBack()
+  await expect(panel.getByLabel("Tool name", { exact: true })).toHaveValue(executeToolKey)
+  await expect(panel.getByRole("button", { name: "First evidence page", exact: true })).toBeEnabled()
+  expect(readerReads.some(url => url.searchParams.get("at") === "tool-2")).toBe(true)
+  expect(api.violations).toEqual([])
+})
+
+test("v4 stale evidence clears identity filters on refresh and denial hides the previous report", async ({ page }) => {
+  const api = await stableToolAPI(page)
+  await page.goto(path)
+  await page.getByRole("button", { name: "Session analysis", exact: true }).click()
+  const panel = page.getByRole("region", { name: "Session analysis", exact: true })
+  await panel.getByRole("button", { name: "exec_command", exact: true }).click()
+  api.mode("changed")
+  await panel.getByRole("button", { name: "Next evidence page", exact: true }).click()
+  await expect(panel.getByRole("heading", { name: "Conversation has changed", exact: true })).toBeVisible()
+  await expect(panel.getByRole("heading", { name: "Recorded tools", exact: true })).toHaveCount(0)
+  api.mode("replacement")
+  await panel.getByRole("button", { name: "Reload analysis", exact: true }).first().click()
+  await expect(panel.getByText("No linked tool calls were captured.", { exact: true })).toBeVisible()
+  await expect(panel.getByLabel("Tool name", { exact: true })).toHaveValue("")
+  expect(Object.fromEntries(api.reads.at(-1)!.searchParams)).toEqual({ metric: "tools" })
+  api.mode("denied")
+  await panel.getByRole("button", { name: "Reload analysis", exact: true }).first().click()
+  await expect(panel.getByRole("heading", { name: "Analysis is unavailable", exact: true })).toBeVisible()
+  await expect(panel.locator(".analytics-summary")).toHaveCount(0)
+  expect(api.violations).toEqual([])
+})
+
+test("a v3 Server keeps activity and display-label tool filters when it ignores the v4 preference", async ({ page }) => {
+  const reads: URL[] = []
+  await page.route("**/api/v1/sessions/session-reader/analytics*", async route => {
+    const url = new URL(route.request().url()); reads.push(url)
+    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
+    await route.fulfill({ json: activityFixture })
+  })
+  await page.goto(path)
+  await page.getByRole("button", { name: "Session analysis", exact: true }).click()
+  const panel = page.getByRole("region", { name: "Session analysis", exact: true })
+  await expect(panel.getByRole("region", { name: "Recorded activity", exact: true })).toBeVisible()
+  await expect(panel.getByRole("heading", { name: "Tool call labels", exact: true })).toBeVisible()
+  await expect(panel.getByText("Calls with tool identity", { exact: true })).toHaveCount(0)
+  await panel.getByRole("button", { name: "Read file", exact: true }).click()
+  await expect(panel.getByLabel("Tool label", { exact: true })).toHaveValue("Read file")
+  expect(Object.fromEntries(reads.at(-1)!.searchParams)).toMatchObject({ metric: "tools", snapshot: "snapshot-one", tool: "Read file" })
+})
+
+for (const identityType of ["tool", "skill"] as const) {
+  test(`a literal unknown ${identityType} name and a null identity remain distinct v4 selections in Chinese`, async ({ page }) => {
+    const fixture = literalUnknownToolFixture(identityType), reads: URL[] = []
+    await page.addInitScript(() => window.localStorage.setItem("atape.locale", "zh-CN"))
+    await page.route("**/api/v1/sessions/session-reader/analytics*", async route => {
+      const url = new URL(route.request().url()); reads.push(url)
+      const selected = url.searchParams.get("tool")
+      expect(selected === null || selected === executeToolKey || selected === unknownToolKey).toBe(true)
+      const items = url.searchParams.get("metric") === "failed_tools" ? [] :
+        selected === executeToolKey ? [fixture.evidence.items[0]] : selected === unknownToolKey ? [fixture.evidence.items[1]] : fixture.evidence.items
+      await route.fulfill({ json: { ...fixture, evidence: { items } } })
+    })
+    await page.goto(path)
+    await page.getByRole("button", { name: "会话分析", exact: true }).click()
+    const panel = page.getByRole("region", { name: "会话分析", exact: true })
+    const toolSection = panel.getByRole("heading", { name: "已记录工具", exact: true }).locator("..")
+    await expect(toolSection.getByRole("button", { name: "unknown", exact: true })).toHaveCount(1)
+    await expect(toolSection.getByRole("button", { name: "未知", exact: true })).toHaveCount(1)
+    const dropdown = panel.getByLabel("工具名称", { exact: true })
+    await expect(dropdown.locator(`option[value="${executeToolKey}"]`)).toHaveText(`unknown · execute · ${identityType === "tool" ? "工具" : "Skill"}`)
+    await expect(dropdown.locator(`option[value="${unknownToolKey}"]`)).toHaveText("未知 · execute · 未知")
+    await toolSection.getByRole("button", { name: "unknown", exact: true }).click()
+    await expect(dropdown).toHaveValue(executeToolKey)
+    await expect(panel.locator(".analytics-evidence-list").getByRole("link")).toHaveText(["Literal unknown native call"])
+    expect(reads.at(-1)!.searchParams.get("tool")).toBe(executeToolKey)
+    await dropdown.selectOption(unknownToolKey)
+    await expect(panel.locator(".analytics-evidence-list").getByRole("link")).toHaveText(["Call without identity"])
+    expect(reads.at(-1)!.searchParams.get("tool")).toBe(unknownToolKey)
+    await toolSection.getByRole("button", { name: "状态未知调用：unknown", exact: true }).click()
+    await expect(dropdown).toHaveValue(executeToolKey)
+    expect(Object.fromEntries(reads.at(-1)!.searchParams)).toMatchObject({ metric: "unknown_tools", tool: executeToolKey, snapshot: "snapshot-one" })
+    await toolSection.getByRole("button", { name: "失败调用：未知", exact: true }).click()
+    await expect(dropdown).toHaveValue(unknownToolKey)
+    expect(Object.fromEntries(reads.at(-1)!.searchParams)).toMatchObject({ metric: "failed_tools", tool: unknownToolKey, snapshot: "snapshot-one" })
+  })
+}

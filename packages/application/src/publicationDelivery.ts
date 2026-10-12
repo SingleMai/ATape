@@ -1,6 +1,6 @@
 import { Context, Effect, Schema } from "effect"
 import {
-  PublicationActivation, PublicationAttempt, PublicationBegin, PublicationBinding, PublicationCapabilities, PublicationLegacyAdoption, PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4,
+  PublicationActivation, PublicationAttempt, PublicationBegin, PublicationBinding, PublicationCapabilities, PublicationLegacyAdoption, PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfile5,
   PublicationManifest, PublicationProtocol, PublicationScope, RawAuthority, RawPublicationChunk, RawPublicationWireBytes, sameRawAuthority,
   type RawPublicationReceipt,
   type PublicationPart, type PublicationReservation
@@ -34,6 +34,7 @@ const Intent = Schema.Struct({ protocol: Schema.Literal(PublicationProtocol), bi
   scope: PublicationScope, sessionId: Schema.String, begin: PublicationBegin, capabilities: PublicationCapabilities,
   targetProfileV3: Schema.optionalKey(Schema.Literal(PublicationTargetProfile3)),
   targetProfileV4: Schema.optionalKey(Schema.Literal(PublicationTargetProfile4)),
+  targetProfileV5: Schema.optionalKey(Schema.Literal(PublicationTargetProfile5)),
   adoption: Schema.optionalKey(Schema.Struct({ revisionFloor: PublicationLegacyAdoption.fields.revisionFloor })),
   rawAuthority: Schema.optionalKey(RawAuthority) })
 const Seal = Schema.Struct({ protocol: Schema.Literal(PublicationProtocol), fence: PublicationAttempt.fields.fence, manifest: PublicationManifest })
@@ -111,6 +112,7 @@ export const beginPublicationCapture = (owner: CaptureClaim, input: {
   const intent: Intent = { protocol: PublicationProtocol, binding, scope, sessionId: reservation.sessionId, begin, capabilities: durableCapabilities,
     ...(capabilities.targetProfiles?.includes(PublicationTargetProfile3) ? { targetProfileV3: PublicationTargetProfile3 } : {}),
     ...(capabilities.targetProfiles?.includes(PublicationTargetProfile4) ? { targetProfileV4: PublicationTargetProfile4 } : {}),
+    ...(capabilities.targetProfiles?.includes(PublicationTargetProfile5) ? { targetProfileV5: PublicationTargetProfile5 } : {}),
     ...(adoption === undefined ? {} : { adoption: { revisionFloor: adoption.revisionFloor } }),
     ...(rawAuthority === undefined ? {} : { rawAuthority }) }
   yield* journal.reserve(owner, { id: input.captureId, expectedCheckpoint: owner.checkpoint,
@@ -135,7 +137,8 @@ export const publicationPreparationContext = (owner: CaptureOwner, id: string) =
   return { intent, rawEnabled: capture.rawEnabled,
     targetProfiles: [...new Set([...targetProfiles,
       ...(intent.targetProfileV3 === PublicationTargetProfile3 ? [PublicationTargetProfile3] : []),
-      ...(intent.targetProfileV4 === PublicationTargetProfile4 ? [PublicationTargetProfile4] : [])])] }
+      ...(intent.targetProfileV4 === PublicationTargetProfile4 ? [PublicationTargetProfile4] : []),
+      ...(intent.targetProfileV5 === PublicationTargetProfile5 ? [PublicationTargetProfile5] : [])])] }
 })
 
 const hashManifestText = (value: string) => Effect.tryPromise({

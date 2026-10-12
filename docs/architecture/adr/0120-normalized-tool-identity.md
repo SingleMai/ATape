@@ -106,3 +106,8 @@ profile negotiation in [ADR-0114](0114-explicit-unknown-conversation-time.md).
 [ADR-0121](0121-tool-identity-release-transition.md) amends the release/recovery
 boundary with a compatible source metadata envelope and an explicit stopped
 transition for immutable 0.5.8 active-Claude upgrade parents.
+
+[ADR-0124](0124-stable-native-tool-identity.md) extends this identity union with
+explicit ordinary native tool names under Canonical/publication v5 and adds
+opt-in stable tool grouping in Analytics v4. V4 admission and earlier analytics
+representations retain their recorded scope.

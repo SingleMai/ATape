@@ -1,4 +1,4 @@
-import { CanonicalProfileVersion4, ToolIdentityMetaKey, SourceCaptureHeaderV2, SourceCapturePage, SourceCaptureVersion2, AdapterCollectionLimits,
+import { CanonicalProfileVersion5, ToolIdentityMetaKey, SourceCaptureHeaderV2, SourceCapturePage, SourceCaptureVersion2, AdapterCollectionLimits,
   type AdapterOpenContext, type SourceOpenRequestV2, type SourceCaptureFrame } from "@atape/domain"
 import { Effect, Schema } from "effect"
 import { appendFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises"
@@ -17,7 +17,7 @@ type Row = Record<string, any>
 let directory: string, file: string, context: AdapterOpenContext & { signal: AbortSignal }
 const sid = "generated-capture-session", encode = (rows: Row[]) => rows.map(row => JSON.stringify(row) + "\n").join("")
 const limits = { rowBytes: 16 * 1024 * 1024, pageBytes: 32 * 1024 * 1024, pageRows: 100, records: 10000, threads: 100, durationMs: 300000 }
-const projection = { events: 100000, usage: 100000, pageItems: 1, pageBytes: 32 * 1024 * 1024, canonicalProfiles: [CanonicalProfileVersion4] }
+const projection = { events: 100000, usage: 100000, pageItems: 1, pageBytes: 32 * 1024 * 1024, canonicalProfiles: [CanonicalProfileVersion5] }
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "atape-claude-capture-")); file = join(directory, "session.jsonl")
   vi.stubEnv("ATAPE_CLAUDE_SESSION_FILE", file)
@@ -84,13 +84,13 @@ const nativeFamily = async () => {
   return { proof, sources, childFile, childId: `claude-agent:${proof.agentId}` }
 }
 
-it.each([undefined, ["atape.acp-centered.v2"] as const])("requires an explicit Host v4 capability before opening source bytes (%s)", async canonicalProfiles => {
+it.each([undefined, ["atape.acp-centered.v2"] as const, ["atape.acp-centered.v4"] as const])("requires an explicit Host v5 capability before opening source bytes (%s)", async canonicalProfiles => {
   // The source does not exist: capability failure must precede discovery/read.
   const { canonicalProfiles: _profiles, ...legacyProjection } = projection
   await expect(capture(request({ projection: { ...legacyProjection, ...(canonicalProfiles ? { canonicalProfiles } : {}) } }))).rejects.toThrow("Upgrade the ATape CLI")
 })
 
-it("retains only explicit native MCP and Skill identities without changing source bodies or outcomes", async () => {
+it("retains explicit native tool, MCP and Skill identities without changing source bodies or outcomes", async () => {
   const blocks = [
     { type: "tool_use", id: "mcp", name: "mcp__docs__read_page", input: { id: "page" } },
     { type: "tool_use", id: "skill", name: "Skill", input: { skill: "plugin:review", args: "private input" } },
@@ -103,7 +103,8 @@ it("retains only explicit native MCP and Skill identities without changing sourc
     { type: "tool_use", id: "large", name: "Skill", input: { skill: "界".repeat(167) } },
     { type: "tool_use", id: "omitted-input", name: "Skill", input: { skill: "private-workflow", args: "x".repeat(65536) } },
     { type: "tool_use", id: "boundary", name: "Skill", input: { skill: "界".repeat(166) } },
-    { type: "tool_use", id: "malformed-mcp", name: "mcp__docs", input: {} }
+    { type: "tool_use", id: "malformed-mcp", name: "mcp__docs", input: {} },
+    ...["", " Read", "Read ", "Read\u0085", "界".repeat(167)].map((name, i) => ({ type: "tool_use", id: `invalid-${i}`, name, input: {} }))
   ]
   const common = { sessionId: sid, cwd: directory, isSidechain: false, timestamp: "2026-10-11T00:00:00Z" }
   const source = encode([
@@ -116,11 +117,13 @@ it("retains only explicit native MCP and Skill identities without changing sourc
   ])
   await writeFile(file, source)
   const actual = await capture()
-  expect(actual.header).toMatchObject({ profile: "claude.jsonl.active-path.2", canonicalProfileVersion: CanonicalProfileVersion4 })
+  expect(actual.header).toMatchObject({ profile: "claude.jsonl.active-path.3", canonicalProfileVersion: CanonicalProfileVersion5 })
   const calls = actual.events.filter(event => event.update.sessionUpdate === "tool_call")
   expect(calls.filter(event => "_meta" in event.update).map(event => event.update)).toMatchObject([
     { toolCallId: "mcp", status: "pending", _meta: { [ToolIdentityMetaKey]: { type: "mcp", server: "docs", name: "read_page" } } },
     { toolCallId: "skill", status: "pending", _meta: { [ToolIdentityMetaKey]: { type: "skill", name: "plugin:review" } } },
+    { toolCallId: "file", title: "Read", status: "pending", _meta: { [ToolIdentityMetaKey]: { type: "tool", name: "Read" } } },
+    { toolCallId: "mention", title: "Run Skill workflow", status: "pending", _meta: { [ToolIdentityMetaKey]: { type: "tool", name: "Run Skill workflow" } } },
     { toolCallId: "boundary", status: "pending", _meta: { [ToolIdentityMetaKey]: { type: "skill", name: "界".repeat(166) } } }
   ])
   expect(calls.find(event => "toolCallId" in event.update && event.update.toolCallId === "skill")?.update)
@@ -131,7 +134,9 @@ it("retains only explicit native MCP and Skill identities without changing sourc
     { toolCallId: "mcp", status: "completed" }, { toolCallId: "skill", status: "failed" }
   ])
   expect(actual.events.filter(event => event.update.sessionUpdate === "tool_call_update").every(event => !("_meta" in event.update))).toBe(true)
+  expect(calls.filter(event => "toolCallId" in event.update && event.update.toolCallId.startsWith("invalid-")).every(event => !("_meta" in event.update))).toBe(true)
   expect(rawText(actual.frames)).toBe(source)
+  expect(await capture(request({ priorCheckpoint: actual.header.sourceCheckpoint, priorThreads: actual.header.threads }))).toEqual(actual)
   expect(await capture(request({ rawEnabled: false }))).toMatchObject({ header: actual.header, events: actual.events })
 })
 

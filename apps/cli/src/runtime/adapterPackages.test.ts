@@ -1,5 +1,5 @@
 import { AdapterPackages } from "@atape/application"
-import { CanonicalProfileVersion3, SourceCaptureVersion2, releaseBundleURL, releasePackageNames, type ReleaseBundle } from "@atape/domain"
+import { CanonicalProfileVersion3, CanonicalProfileVersion5, SourceCaptureVersion2, releaseBundleURL, releasePackageNames, type ReleaseBundle } from "@atape/domain"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { execFile } from "node:child_process"
@@ -46,13 +46,13 @@ const install = (directory: string, spec: string, discovery?: ReleaseDiscovery, 
   ), active ? { signal: active } : undefined)
 
 describe("official Adapter release installation", () => {
-  it("retains the declared legacy v3 profile in its immutable installation and caller result", async () => {
+  it.each([CanonicalProfileVersion3, CanonicalProfileVersion5])("retains declared legacy %s in its immutable installation and caller result", async profile => {
     const home = await root(), source = await packed(home, "1.2.3", "codex", "@atape/adapter-codex",
-      { legacyCanonicalProfile: CanonicalProfileVersion3 }), directory = join(home, "adapters")
+      { legacyCanonicalProfile: profile }), directory = join(home, "adapters")
     const installed = await install(directory, source.archive)
-    expect(installed.manifest.legacyCanonicalProfile).toBe(CanonicalProfileVersion3)
+    expect(installed.manifest.legacyCanonicalProfile).toBe(profile)
     const metadata = JSON.parse(await readFile(join(adapterPackageRoot(directory, installed), "package.json"), "utf8"))
-    expect(metadata.atapeAdapter.legacyCanonicalProfile).toBe(CanonicalProfileVersion3)
+    expect(metadata.atapeAdapter.legacyCanonicalProfile).toBe(profile)
   }, 20_000)
   it("rejects a source runtime's legacy profile declaration before creating an installation slot", async () => {
     const home = await root(), source = await packed(home, "1.2.3", "codex", "@atape/adapter-codex",

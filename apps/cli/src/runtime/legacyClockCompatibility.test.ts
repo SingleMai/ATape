@@ -4,7 +4,7 @@ import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { AdapterCollectionLimits, AdapterProtocolVersion, CanonicalProfileVersion3,
+import { AdapterCollectionLimits, AdapterProtocolVersion, CanonicalProfileVersion5,
   type AdapterInstallation, type AtapeAdapterModule, type CollectorCheckpoint, type LocalProject } from "@atape/domain"
 import { expect, it } from "vitest"
 import { legacyClockHostV059 } from "./fixtures/legacy-clock-host-v059.ts"
@@ -35,7 +35,7 @@ it("the genuine 0.5.9 Node Host refuses the current Codex clock profile before s
     const manifest = JSON.parse(manifestBytes.toString("utf8")) as {
       name: string; version: string; atapeAdapter: { entry: string; legacyCanonicalProfile: string }
     }
-    expect(manifest.atapeAdapter.legacyCanonicalProfile).toBe(CanonicalProfileVersion3)
+    expect(manifest.atapeAdapter.legacyCanonicalProfile).toBe(CanonicalProfileVersion5)
     const adapterDirectory = join(home, "adapters"), packageRoot = join(adapterDirectory, "node_modules", "@atape", "adapter-codex")
     const entry = resolve(packageRoot, manifest.atapeAdapter.entry)
     await mkdir(dirname(entry), { recursive: true })
@@ -74,7 +74,7 @@ it("the genuine 0.5.9 Node Host refuses the current Codex clock profile before s
     const refusal = await old.runPromise(old.scoped(historical.AdapterRuntimes.use(runtimes => runtimes.open(project, adapter))).pipe(
       old.provide(runtimeLayer), old.flip))
     expect(refusal).toMatchObject({ reason: "load", retryable: false,
-      message: expect.stringContaining("Upgrade the ATape CLI to collect Codex with explicit source clock quality.") })
+      message: expect.stringContaining("Upgrade the ATape CLI to collect Codex with explicit source clock quality and stable tool identities.") })
     expect(refusal.message).not.toContain("Could not open the Codex archive")
     expect(await readCheckpoint()).toEqual(before)
     expect(await readFile(stateFile)).toEqual(frozenState)
@@ -83,7 +83,7 @@ it("the genuine 0.5.9 Node Host refuses the current Codex clock profile before s
     // public factory receives the new Host fact and the caller starts collect.
     const current = await import(pathToFileURL(entry).href) as AtapeAdapterModule
     const admitted = await current.createAtapeAdapter({ protocolVersion: AdapterProtocolVersion,
-      legacyCanonicalProfiles: [CanonicalProfileVersion3], adapter: { id: adapter.adapterId, version: adapter.version },
+      legacyCanonicalProfiles: [CanonicalProfileVersion5], adapter: { id: adapter.adapterId, version: adapter.version },
       project: { id: project.id, type: project.type, path: project.path }, signal: AbortSignal.timeout(5000) })
     try {
       expect("collect" in admitted).toBe(true)

@@ -1,6 +1,6 @@
 import { AdapterRuntimeError, type HostedSourceCapture } from "@atape/application"
 import { SourceCaptureHeader, SourceCaptureHeaderV2, SourceCapturePriorThread, SourceCapturePage, SourceDiscoveryPage, SourceCaptureLimits, SourceProjectionLimits, SourceCaptureVersion, SourceCaptureVersion2,
-  CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, type SourceCaptureRuntime, type SourceCaptureView } from "@atape/domain"
+  CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion5, PublicationTargetProfile5, hasNullableSourceClocks, admitsToolMetadata, type CanonicalProfile, type AdapterManifest, type SourceCaptureRuntime, type SourceCaptureView } from "@atape/domain"
 import { Effect, Schema } from "effect"
 
 const failure = (adapterId: string, reason: AdapterRuntimeError["reason"], message: string) =>
@@ -23,7 +23,13 @@ const invoke = <A>(work: (signal: AbortSignal) => A | PromiseLike<A>, signal: Ab
     }, cause => { signal.removeEventListener("abort", abort); reject(cause) })
   })
 
-export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRuntime, lifetime: AbortSignal): HostedSourceCapture => {
+export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRuntime, lifetime: AbortSignal,
+  declaredMinimum?: AdapterManifest["publicationTargetProfile"]): HostedSourceCapture => {
+  // Older installed SDKs decode a closed v2/v3/v4 list with a three-item bound.
+  // Only a package declaring v5 may receive the expanded Host advertisement.
+  const canonicalProfiles: ReadonlyArray<CanonicalProfile> = declaredMinimum === PublicationTargetProfile5
+    ? [CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion5]
+    : [CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4]
   const call = <A>(work: (signal: AbortSignal) => A | PromiseLike<A>, durationMs: number, disposeLate?: (value: A) => Promise<unknown>) => Effect.tryPromise({
     try: signal => invoke(work, AbortSignal.any([signal, lifetime, AbortSignal.timeout(Math.max(1, Math.ceil(durationMs)))]), disposeLate),
     catch: cause => {
@@ -66,7 +72,7 @@ export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRunti
       const admitted = yield* limits(request.limits)
       const projection = yield* Schema.decodeUnknownEffect(SourceProjectionLimits)(request.projection).pipe(
         Effect.mapError(() => failure(adapterId, "contract", "Source projection requires valid explicit admission.")))
-      const supportedProjection = { ...projection, canonicalProfiles: [CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4] as const }
+      const supportedProjection = { ...projection, canonicalProfiles }
       yield* Effect.try({ try: () => bounded(request.priorThreads ?? [], 2 * 1024 * 1024), catch: () => failure(adapterId, "contract", "Prior Thread metadata exceeds its byte bound.") })
       const priorThreads = yield* Schema.decodeUnknownEffect(Schema.Array(SourceCapturePriorThread).check(Schema.isMaxLength(1000)))(request.priorThreads ?? []).pipe(
         Effect.mapError(() => failure(adapterId, "contract", "Source capture requires valid prior Thread metadata.")))
@@ -85,8 +91,10 @@ export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRunti
       if (typeof view?.read !== "function" || typeof view?.close !== "function")
         return yield* failure(adapterId, "contract", "Adapter source must return a readable closeable view.")
       const header = yield* decode(foreign.protocolVersion === SourceCaptureVersion2 ? SourceCaptureHeaderV2 : SourceCaptureHeader, view, projection.pageBytes)
-      if (header.canonicalProfileVersion !== CanonicalProfileVersion3 && header.canonicalProfileVersion !== CanonicalProfileVersion4 && header.session.updatedAt === null)
-        return yield* failure(adapterId, "contract", "Unknown source times require an explicit Canonical v3 or v4 profile.")
+      if (!canonicalProfiles.includes(header.canonicalProfileVersion ?? CanonicalProfileVersion))
+        return yield* failure(adapterId, "contract", "Source Canonical profile exceeds the Host capability advertised to its package.")
+      if (!hasNullableSourceClocks(header.canonicalProfileVersion ?? CanonicalProfileVersion) && header.session.updatedAt === null)
+        return yield* failure(adapterId, "contract", "Unknown source times require an explicit Canonical v3, v4 or v5 profile.")
       if ("sourceCheckpoint" in header && Buffer.byteLength(header.sourceCheckpoint as string) > 1024 * 1024)
         return yield* failure(adapterId, "contract", "Source checkpoint exceeds its opaque byte bound.")
       if (header.origin.sourceId !== request.sourceId || header.session.sourceSessionId !== request.sourceId ||
@@ -100,10 +108,10 @@ export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRunti
       }, catch: cause => cause as AdapterRuntimeError }), () => call(signal => view.read(signal), deadline - performance.now()).pipe(
         Effect.flatMap(value => decode(SourceCapturePage, value, projection.pageBytes)),
         Effect.flatMap(page => {
-          if (header.canonicalProfileVersion !== CanonicalProfileVersion3 && header.canonicalProfileVersion !== CanonicalProfileVersion4 && page.frames.some(frame => frame.events.some(event => event.occurredAt === null)))
-            return Effect.fail(failure(adapterId, "contract", "Unknown source times require an explicit Canonical v3 or v4 profile."))
-          if (header.canonicalProfileVersion !== CanonicalProfileVersion4 && page.frames.some(frame => frame.events.some(event => "_meta" in event.update)))
-            return Effect.fail(failure(adapterId, "contract", "Tool identities require an explicit Canonical v4 profile."))
+          if (!hasNullableSourceClocks(header.canonicalProfileVersion ?? CanonicalProfileVersion) && page.frames.some(frame => frame.events.some(event => event.occurredAt === null)))
+            return Effect.fail(failure(adapterId, "contract", "Unknown source times require an explicit Canonical v3, v4 or v5 profile."))
+          if (page.frames.some(frame => frame.events.some(event => (event.update.sessionUpdate === "tool_call" || event.update.sessionUpdate === "tool_call_update") && !admitsToolMetadata(header.canonicalProfileVersion ?? CanonicalProfileVersion, event.update))))
+            return Effect.fail(failure(adapterId, "contract", "Tool identities require a compatible explicit Canonical profile."))
           if (page.frames.length > projection.pageItems || !page.done && page.frames.length === 0 || !request.rawEnabled && page.frames.some(frame => frame.raw !== undefined))
             return Effect.fail(failure(adapterId, "contract", "Adapter source frame page violates its admission or Raw policy."))
           finished = page.done

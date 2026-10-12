@@ -19,6 +19,15 @@ export class SessionAnalyticsGateway extends Context.Service<SessionAnalyticsGat
 export const canFilterSessionAnalyticsTool = (label: string): boolean =>
   new TextEncoder().encode(label).byteLength <= 500
 
+// The opaque v4 row key selects identity and kind together. Older Servers
+// select displayed labels and retain the original UTF-8 query bound.
+export const sessionAnalyticsToolSelections = (report: SessionAnalytics): ReadonlyArray<{
+  readonly tool: SessionAnalytics["tools"][number]
+  readonly filter: string | null
+}> => report.analyticsVersion === 4
+  ? report.tools.map(tool => ({ tool, filter: tool.key }))
+  : report.tools.map(tool => ({ tool, filter: canFilterSessionAnalyticsTool(tool.name) ? tool.name : null }))
+
 export type SessionAnalyticsFilter = Pick<SessionAnalyticsQuery, "metric" | "thread" | "tool" | "capability" | "server" | "range">
 
 // Changing evidence selection clears incompatible filters and old ranges.
@@ -62,11 +71,11 @@ export const readSessionAnalytics = Effect.fn("SessionAnalytics.read")(function*
     return yield* Effect.fail(new SessionAnalyticsGatewayError({ reason: "http", status: 409, code: "refresh_required",
       message: "The conversation changed. Reload its analytics." }))
   }
-  if (query.metric === "records" && result.analyticsVersion !== 3) {
+  if (query.metric === "records" && result.analyticsVersion !== 3 && result.analyticsVersion !== 4) {
     return yield* Effect.fail(new SessionAnalyticsGatewayError({ reason: "http", status: 422,
       message: "This Server does not provide records evidence. Reload its supported analysis." }))
   }
-  if (result.analyticsVersion === 3 && result.activity.scopeThreadId !== (query.thread ?? null)) {
+  if ((result.analyticsVersion === 3 || result.analyticsVersion === 4) && result.activity.scopeThreadId !== (query.thread ?? null)) {
     return yield* Effect.fail(new SessionAnalyticsGatewayError({ reason: "decode",
       message: "The activity response belongs to a different Thread scope." }))
   }
