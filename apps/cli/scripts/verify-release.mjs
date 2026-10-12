@@ -12,6 +12,7 @@ import { promisify } from "node:util"
 import { startCLIAuthFixture } from "../../../scripts/cli-auth-fixture.mjs"
 import { loadReleaseContract } from "../../../scripts/release-contract.mjs"
 import { verifyToolIdentityRelease } from "./tool-identity-release-gate.mjs"
+import { verifyCodexClockRelease } from "./codex-clock-release-gate.mjs"
 
 const execute = promisify(execFile)
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url))
@@ -77,6 +78,9 @@ try {
   await verifyChecksums()
   await run(process.execPath, ["--test", fileURLToPath(new URL("tool-identity-release-gate.node.mjs", import.meta.url))], repositoryRoot)
   await verifyToolIdentityRelease({ version: release.version, releaseDirectory })
+  await run(process.execPath, ["--test", fileURLToPath(new URL("codex-clock-release-gate.node.mjs", import.meta.url))], repositoryRoot)
+  const clockTransition = await verifyCodexClockRelease({ version: release.version, releaseDirectory })
+  process.stdout.write(`Codex clock release gate: ${JSON.stringify(clockTransition)}\n`)
   await verifyChecksums()
   await Promise.all([
     mkdir(projectDirectory, { recursive: true }),

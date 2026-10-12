@@ -117,6 +117,26 @@ already frozen artifact directory without building or repacking:
 node apps/cli/scripts/tool-identity-release-gate.mjs /absolute/frozen/tarballs
 ```
 
+For 0.5.10 and later on POSIX, the exact verifier also requires the
+[stopped Codex clock transition](cli/setup-and-adapters.md#codex-source-clocks-059-to-0510).
+The separate clock gate anonymously downloads the genuine npm-published CLI and
+Codex 0.5.9 archives with fixed SHA-512 integrity, the same 8 MiB bound and
+30-second deadline. It captures controlled native-format records and Raw through
+the old installed Collector, verifies automatic and interactive refusal before
+pause, then executes the actual stopped console's complete-bundle update.
+The installed target must preserve checkpoint/credential bytes and Stop intent,
+replay available history under nullable v3 with stable IDs and higher revisions,
+retain Raw receipts, and continue through no-op and append. The genuine old
+Adapter must refuse the resulting projection-v5 cursor. Distribution and Server
+HTTP are external Test Adapters; this does not establish live Provider or
+production acceptance. Windows has no POSIX PTY contract here. There is no
+environment override that skips the required POSIX gate. To verify an already
+frozen checksummed directory without building or repacking:
+
+```sh
+node apps/cli/scripts/codex-clock-release-gate.mjs /absolute/frozen/tarballs
+```
+
 The exact checksummed OpenCode, CodeBuddy, Kimi, Grok and Cursor artifacts also run their installed source-capability
 verification outside the checkout with controlled native data. The workflow publishes the exact release
 tarballs and attaches them plus `SHA256SUMS` to the GitHub Release.
