@@ -1,6 +1,7 @@
 import { AdapterPackages, AutomaticUpdateError, AutomaticUpdatePlatform, automaticUpdatesEnabled,
   isNewerReleaseVersion, isStableReleaseVersion, officialSources } from "@atape/application"
-import { AdapterInstallation, ClientConfig, emptyClientConfig, ManagedReleaseBundle as ReleaseBundle, decodeManagedReleaseBundle as decodeReleaseBundle, managedReleaseBundleFingerprint as releaseBundleFingerprint, updateCatalogProtocol } from "@atape/domain"
+import { AdapterInstallation, ClientConfig, emptyClientConfig, ManagedReleaseBundle as ReleaseBundle, decodeManagedReleaseBundle as decodeReleaseBundle, managedReleaseBundleFingerprint as releaseBundleFingerprint, updateCatalogProtocol, updateTargetProtocol,
+  type TargetReleaseBundle, type MigrationReleaseBundle } from "@atape/domain"
 import { copyFile, lstat, mkdir, open, readFile, realpath, rename, rm, writeFile } from "node:fs/promises"
 import { createHash, randomUUID } from "node:crypto"
 import { dirname, join } from "node:path"
@@ -8,9 +9,9 @@ import { spawn } from "node:child_process"
 import { isDeepStrictEqual } from "node:util"
 import { performance } from "node:perf_hooks"
 import { Effect, Layer, Schema } from "effect"
-import { captureStateContract } from "../version.ts"
+import { captureStateContract, cliVersion } from "../version.ts"
 import { defaultNodeClientPaths, type NodeClientPaths } from "./clientPaths.ts"
-import { createCaptureMigrationCoordinator } from "./captureMigration.ts"
+import { createCaptureMigrationCoordinator, targetCaptureAuthorizationPending } from "./captureMigration.ts"
 import { activateManagedCaptureUpdate, recoverManagedCaptureUpdate } from "./managedCaptureUpdates.ts"
 import { createReleaseDiscovery } from "./releaseDiscovery.ts"
 import { executeOwnedProcess } from "./ownedProcess.ts"
@@ -20,6 +21,10 @@ import { withClientConfigFileLock } from "./clientConfig.ts"
 import { validateCollectorAdapters } from "./collectorReadiness.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
 import { assertNoPendingManualStateUpgrade } from "./manualStateUpgrade.ts"
+import { advanceTargetUpdate, assertNoTargetUpdate, beginTargetUpdate, finishTargetUpdate, invokeTargetUpdate,
+  invokeTargetOwner, readTargetUpdateHandoff, readTargetUpdateOwner, recoverTargetUpdate, retireObsoleteTargetOwner,
+  targetOwnerRetirementPending, targetUpdateMatches, targetUpdatePending, type TargetUpdateHandoff } from "./targetUpdate.ts"
+import { actualRuntimeIdentity } from "./runtimeAdmission.ts"
 import { createUpdateControl, UpdateRuntimeSelection, updateControlProtocol,
   type UpdateControlTicket, type UpdateRuntimeSelection as ControlSelection } from "./updateControl.ts"
 export { acquireUpdateWorker } from "./updateOwnership.ts"
@@ -130,9 +135,9 @@ const controlCapable = async (entry: string) => {
   return manifest.atapeRuntime?.updateControlProtocol === updateControlProtocol
 }
 
-export const recoverPendingUpdate = async (paths: NodeClientPaths, bootstrap: string, environment: NodeJS.ProcessEnv) => {
+export const recoverTargetExecutionUpdate = async (paths: NodeClientPaths, bootstrap: string, environment: NodeJS.ProcessEnv, targetUpdate?: TargetUpdateHandoff) => {
   await assertNoPendingManualStateUpgrade(paths)
-  if (await recoverManagedCaptureUpdate(paths, bootstrap, environment)) return
+  if (await recoverManagedCaptureUpdate(paths, bootstrap, environment, targetUpdate)) return
   const control = createUpdateControl(paths.atapeHome)
   const pending = await readOptional(pendingFile(paths.atapeHome), Schema.decodeUnknownSync(Pending))
   const controlPending = await control.recoveryPending()
@@ -167,12 +172,38 @@ export const recoverPendingUpdate = async (paths: NodeClientPaths, bootstrap: st
   await rm(pendingFile(paths.atapeHome), { force: true })
 }
 
-export const needsUpdateRecovery = async (paths: NodeClientPaths) =>
+export const needsTargetExecutionRecovery = async (paths: NodeClientPaths) =>
+  await targetCaptureAuthorizationPending(paths.atapeHome) ||
   await createCaptureMigrationCoordinator(paths).recoveryPending() ||
   (await readOptional(pendingFile(paths.atapeHome), Schema.decodeUnknownSync(Pending))) !== undefined ||
   await createUpdateControl(paths.atapeHome).recoveryPending() || isCollectorMaintenancePending(paths.collectorProcessFile)
 
-export const protectedRuntimeSlots = async (home: string): Promise<ReadonlyArray<string>> => {
+// The stable handoff is examined before an older parent reaches any target-owned
+// capture/preparation decoder. Only the immutable target can settle that work.
+export const needsUpdateRecovery = async (paths: NodeClientPaths) => {
+  if (await targetUpdatePending(paths.atapeHome)) return true
+  const owner = await readTargetUpdateOwner(paths.atapeHome, actualRuntimeIdentity)
+  if (owner && owner.bundle.version !== cliVersion) return true
+  if (!owner && await targetOwnerRetirementPending(paths.atapeHome, actualRuntimeIdentity)) return true
+  return needsTargetExecutionRecovery(paths)
+}
+export const recoverPendingUpdate = async (paths: NodeClientPaths, bootstrap: string, environment: NodeJS.ProcessEnv) => {
+  if (await recoverTargetUpdate(paths.atapeHome, environment)) return
+  const owner = await readTargetUpdateOwner(paths.atapeHome, actualRuntimeIdentity)
+  if (owner && owner.bundle.version !== cliVersion) {
+    if ((await invokeTargetOwner(owner, "owner-recover", environment)).internalPending) throw new Error("Target recovery remains pending.")
+    return
+  }
+  await recoverTargetExecutionUpdate(paths, bootstrap, environment)
+  await retireObsoleteTargetOwner(paths.atapeHome, actualRuntimeIdentity)
+}
+
+export const protectedRuntimeSlots = async (home: string, targetExecution = false): Promise<ReadonlyArray<string>> => {
+  if (!targetExecution) {
+    await assertNoTargetUpdate(home)
+    const owner = await readTargetUpdateOwner(home, actualRuntimeIdentity)
+    if (owner && owner.bundle.version !== cliVersion) return (await invokeTargetOwner(owner, "owner-protected", process.env)).slots
+  }
   const selections: (Selection | ControlSelection)[] = []
   const current = await readEffectiveRuntimeSelection(home)
   if (current) selections.push(current)
@@ -186,11 +217,27 @@ export const protectedRuntimeSlots = async (home: string): Promise<ReadonlyArray
     [pair.before.packageSlot, pair.after.packageSlot].filter((slot): slot is string => slot !== undefined))))]
 }
 
+export type TargetUpdateExecution = { readonly bundle: TargetReleaseBundle; readonly internalBundle: MigrationReleaseBundle; readonly handoff: TargetUpdateHandoff }
+export const targetPreparedUpdateSelection = async (paths: NodeClientPaths, key: string): Promise<ControlSelection> => {
+  if (!/^[0-9a-f-]{36}$/.test(key)) throw new Error("Invalid target preparation key.")
+  const prepared = Schema.decodeUnknownSync(Prepared)(await readBoundedJSON(join(updateDirectory(paths.atapeHome), `${key}.prepared.json`)))
+  if (prepared.selection.protocol !== updateControlProtocol) throw new Error("Target updates require independent update control.")
+  return prepared.selection
+}
+export const retireTargetPreparedUpdate = async (paths: NodeClientPaths, key: string) => {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(key)) throw new Error("Invalid target preparation key.")
+  if (await needsTargetExecutionRecovery(paths)) throw new Error("Target preparation still owns recovery work.")
+  await rm(join(updateDirectory(paths.atapeHome), `${key}.prepared.json`), { force: true })
+}
 export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFile: string, currentVersion: string,
-  environment: NodeJS.ProcessEnv = process.env, fetchMetadata: typeof fetch = globalThis.fetch) => {
+  environment: NodeJS.ProcessEnv = process.env, fetchMetadata: typeof fetch = globalThis.fetch,
+  options: { readonly targetExecution?: TargetUpdateExecution;
+    readonly prepareWakeRecoveryRuntime?: (bootstrap: string, signal: AbortSignal) => Promise<void> } = {}) => {
   const discovery = createReleaseDiscovery({ home: paths.atapeHome, runtimeVersion: currentVersion,
     captureStateContract, updateControlProtocol, fetchMetadata,
+    updateTargetProtocol,
     supportedMigrationPlans: [{ protocol: "atape.capture-migration.v1", id: "journal-v7-to-v8" }] })
+  const recoveryPending = () => options.targetExecution ? needsTargetExecutionRecovery(paths) : needsUpdateRecovery(paths)
   let ownership: Promise<string | undefined> | undefined
   const bootstrap = () => {
     // Deduplicate concurrent probes only. npm/path failures and changes in
@@ -212,7 +259,7 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
   return Layer.effect(AutomaticUpdatePlatform, Effect.gen(function*() {
     const packages = yield* AdapterPackages
     return AutomaticUpdatePlatform.of({
-      recoveryPending: () => nodeEffect("state", () => needsUpdateRecovery(paths)),
+      recoveryPending: () => nodeEffect("state", recoveryPending),
       supported: () => nodeEffect("unsupported", async () => (await bootstrap()) !== undefined),
       schedule: () => nodeEffect("state", async () => (await readOptional(scheduleFile(paths.atapeHome), Schema.decodeUnknownSync(Schedule))) ?? { nextCheckAt: 0, failures: 0 }),
       target: () => nodeEffect("release", signal => discovery.latest({ cached: true, signal })),
@@ -227,7 +274,7 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
         yield* nodeEffect("state", () => assertCandidateEligible(paths.atapeHome, requested, automatic))
         yield* nodeEffect("state", async () => {
           await assertNoPendingManualStateUpgrade(paths)
-          if (await needsUpdateRecovery(paths)) throw new Error("Interrupted update work must recover before preparing another release.")
+          if (await recoveryPending()) throw new Error("Interrupted update work must recover before preparing another release.")
         })
         const original = yield* nodeEffect("unsupported", async () => {
           const original = await bootstrap()
@@ -251,18 +298,32 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
         }))
         const selectedBundle = yield* nodeEffect("release", async signal => {
           const advertised = await discovery.exact({ version, signal })
-          if (releaseBundleFingerprint(requested) !== releaseBundleFingerprint(advertised)) {
+          const expected = options.targetExecution?.bundle ?? requested
+          if (releaseBundleFingerprint(expected) !== releaseBundleFingerprint(advertised)) {
             throw new Error("The selected immutable release bundle changed before preparation.")
           }
-          return advertised
+          return options.targetExecution?.internalBundle ?? advertised
         })
         const baseline = snapshot.config
         yield* nodeEffect("prepare", signal => prepareBootstrapSnapshot(paths, original, environment, signal))
         yield* nodeEffect("prepare", async signal => {
-          const artifact = await discovery.acquireArtifact(selectedBundle, "@atape/cli", signal)
+          const artifact = await discovery.acquireArtifact(options.targetExecution?.bundle ?? selectedBundle, "@atape/cli", signal)
           try { await prepareCLI(paths, selectedBundle, artifact.path, environment, signal) }
           finally { await artifact.release() }
         })
+        if (requested.protocol === "atape.release-bundle.v3" && !options.targetExecution) {
+          return yield* nodeEffect("prepare", async signal => {
+            await options.prepareWakeRecoveryRuntime?.(original, signal)
+            const job = await beginTargetUpdate(paths, { bundle: requested, bootstrapEntry: original, automatic })
+            const receipt = await invokeTargetUpdate(job, "prepare", environment, signal)
+            if (receipt.status !== "prepared" || receipt.preparedKey === undefined || receipt.internalPending) {
+              if (!receipt.internalPending) await finishTargetUpdate(job, receipt)
+              throw updateError("prepare", `The target could not prepare its complete update (${receipt.reason ?? "target-preparation-deferred"}).`)
+            }
+            await advanceTargetUpdate(job, "prepared", receipt.preparedKey)
+            return { bundle: requested, key: job.id }
+          })
+        }
         const replacements: Selection["adapters"][number][] = []
         for (const adapter of adapters) {
           const installed = yield* packages.install(`${adapter.packageName}@${version}`).pipe(
@@ -308,6 +369,17 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
       }),
       activate: (prepared, automatic) => nodeEffect("handoff", async signal => {
         await assertNoPendingManualStateUpgrade(paths)
+        const stableBundle = decodeReleaseBundle(prepared.bundle)
+        if (stableBundle.protocol === "atape.release-bundle.v3" && !options.targetExecution) {
+          const current = await readTargetUpdateHandoff(paths.atapeHome)
+          if (!current || !targetUpdateMatches(current, stableBundle, prepared.key) || current.phase !== "prepared" ||
+            current.preparedKey === undefined || current.automatic !== automatic) throw new Error("The target handoff changed after preparation.")
+          const job = await advanceTargetUpdate(current, "activating", current.preparedKey)
+          const receipt = await invokeTargetUpdate(job, "activate", environment, signal)
+          await finishTargetUpdate(job, receipt)
+          if (receipt.status !== "completed") throw updateError("handoff", `The target update was deferred before activation (${receipt.reason ?? "target-activation-deferred"}).`)
+          return
+        }
         if (!/^[0-9a-f-]{36}$/.test(prepared.key)) throw new Error("Invalid prepared update key.")
         const candidate = Schema.decodeUnknownSync(Prepared)(await readBoundedJSON(join(updateDirectory(paths.atapeHome), `${prepared.key}.prepared.json`)))
         const requested = decodeReleaseBundle(prepared.bundle)
@@ -328,7 +400,7 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
           if (candidate.selection.protocol !== updateControlProtocol || !candidate.controlEligible)
             throw new Error("Capture migration requires an independent prepared target.")
           await activateManagedCaptureUpdate(paths, original, installedBootstrap, { ...candidate,
-            bundle: requested, selection: candidate.selection }, automatic, environment, signal)
+            bundle: requested, selection: candidate.selection }, automatic, environment, signal, options.targetExecution?.handoff)
           await rm(join(updateDirectory(paths.atapeHome), `${prepared.key}.prepared.json`), { force: true })
           await clearCandidateFailure(paths.atapeHome, requested)
           return
@@ -408,7 +480,7 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
                 await rm(pendingFile(paths.atapeHome), { force: true })
               }
             }
-            return !(await needsUpdateRecovery(paths)) && isDeepStrictEqual(await readEffectiveRuntimeSelection(paths.atapeHome),
+            return !(await recoveryPending()) && isDeepStrictEqual(await readEffectiveRuntimeSelection(paths.atapeHome),
               control ? candidate.baselineSelection : previous)
           }).catch(() => false)
           if (cause instanceof CollectorMaintenanceFailure && recovered) await recordCandidateFailure(paths.atapeHome, requested)
@@ -534,16 +606,19 @@ const validateCLI = async (directory: string, version: string, environment: Node
   const manifest = await readBoundedJSON(join(root, "package.json")) as Record<string, unknown>
   const contract = manifest.atapeRuntime as { protocol?: unknown; stateContract?: unknown; captureStateContract?: unknown;
     updateControlProtocol?: unknown; releaseCatalogProtocol?: unknown; updateWakeProtocol?: unknown;
-    migrationReleaseCatalogProtocol?: unknown; captureMigrationProtocol?: unknown; captureMigration?: unknown } | undefined
+    migrationReleaseCatalogProtocol?: unknown; captureMigrationProtocol?: unknown; captureMigration?: unknown; updateTargetProtocol?: unknown } | undefined
   if (manifest.name !== "@atape/cli" || manifest.version !== version ||
     contract?.protocol !== "atape.runtime.v1" || typeof (contract.captureStateContract ?? contract.stateContract) !== "string" ||
     bundle && (contract.captureStateContract ?? contract.stateContract) !== bundle.captureStateContract ||
-    bundle && (contract.updateControlProtocol !== bundle.updateControlProtocol || contract.releaseCatalogProtocol !== updateCatalogProtocol || contract.updateWakeProtocol !== "atape.update-wake.v1")) {
+    bundle && (contract.updateControlProtocol !== bundle.updateControlProtocol || bundle.protocol !== "atape.release-bundle.v3" &&
+      (contract.releaseCatalogProtocol !== updateCatalogProtocol || contract.updateWakeProtocol !== "atape.update-wake.v1"))) {
     throw new Error("The selected CLI does not support compatible managed state.")
   }
   if (bundle?.protocol === "atape.release-bundle.v2" && (contract.captureMigrationProtocol !== bundle.migration.protocol ||
     contract.migrationReleaseCatalogProtocol !== "atape.update-catalog.v2" ||
     !isDeepStrictEqual(contract.captureMigration, bundle.migration))) throw new Error("The selected CLI does not implement the declared capture migration.")
+  if (bundle?.protocol === "atape.release-bundle.v3" && contract.updateTargetProtocol !== updateTargetProtocol)
+    throw new Error("The selected CLI does not implement target-owned updates.")
   const output = await executeOwnedProcess(process.execPath, [join(root, "dist", "atape.js"), "--version"],
     { ...environment, ATAPE_RUNTIME_DIRECT: "1" }, signal, 15_000)
   if (output.trim() !== `ATape ${version}`) throw new Error("Prepared CLI version verification failed.")

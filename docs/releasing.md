@@ -247,7 +247,7 @@ JSON-encoded descriptor and catalog bodies are limited to 128 KiB before the
 first npm write, leaving room for GitHub metadata within the client budget.
 `publication.json` retains the workflow's publication result.
 
-The real capture-v2 bridge's versioned stable Release retains its delimited
+The real capture-v2 legacy bridge's versioned stable Release retains its delimited
 `atape.release-bundle.v1` descriptor and adds an independent
 `atape.migration-release-bundle.v1` section containing strict bundle v2. Both must
 agree on the package set and runtime identity. The fixed prerelease `atape-update-catalog-v1` contains
@@ -272,19 +272,41 @@ reader protocol. All entries participate in immutable byte identity; unknown
 Adapters are not automatically installed. The current publisher still verifies
 exactly the eight packages built by this repository.
 
-The publisher admits only the implemented capture-v2/control-v1
-`journal-v7-to-v8` plan and validates its actual packed capabilities. Compatible
-packages use explicit npm `latest`; a historical rerun behind the
-public CLI target uses `atape-managed` and does not become GitHub Latest. This
+The publisher validates actual packed capabilities and the explicit
+`releaseChannel` in release metadata and the CLI archive. A `legacy-bridge`
+release genuinely supports old parent preparation and may advance npm `latest`
+and v1/v2 routes. A `target-owned` release uses `atape-managed` and catalog v3,
+preserves legacy routes and does not become GitHub Latest. A historical rerun
+behind the public CLI target also remains nonlatest. This
 uses the existing Trusted Publisher `npm publish` permission, without requiring a
 separate `npm dist-tag` management grant. Capable clients discover the complete
 catalog instead of individual tags; immutable historical clients retain their
-old behavior. Keep a genuine catalog-capable v2 bridge at legacy GitHub/npm Latest
-indefinitely. Future different-contract targets require nonlatest npm/GitHub
-publication and a separately implemented, verified migration plan; the current
-publisher rejects those unsupported plans before npm writes. See
+old behavior. Keep the genuine 0.5.11 bridge at legacy GitHub/npm Latest
+indefinitely; its Codex v3 and Claude v4 packages must retain actual old behavior.
+The first v5 feature release advances only the target-owned route. Matching
+capture/control contracts alone cannot authorize advancing a legacy route.
+Future state transformations still need an implemented, verified migration
+owned by the target. See
 [ADR-0108](architecture/adr/0108-compatible-release-bundle-discovery.md) and
-[ADR-0115](architecture/adr/0115-explicit-capture-migrations.md).
+[ADR-0115](architecture/adr/0115-explicit-capture-migrations.md) and
+[ADR-0126](architecture/adr/0126-target-owned-managed-updates.md).
+
+Bundle/catalog v3 binds `updateTargetProtocol: "atape.update-target.v1"` and
+supported source capture contracts, independently of private migration plans.
+The bridge publishes v1/v2/v3; target-owned releases publish only v3 descriptors
+and routes. Old strict readers must never be offered v5-only Adapters through
+their old route. Installed acceptance must exercise authentic 0.5.10 automatic
+delivery to the real bridge and then the real feature artifact. A stopped
+manual replacement or controlled dispatcher test is not that evidence.
+
+The bridge acceptance must keep the genuine historical global entry unchanged
+and prove that target-owned updates need no npm-prefix write permission. Include
+interruption after the completed execution handoff and before private migration
+completion, and recovery through the retained public entry. An existing copied
+scheduled launcher must be refreshed under its owned registration before the
+handoff; creating a new OS job is outside that operation. Old queued workers
+must not roll the public selection backward or retain updater ownership after
+refusing state they cannot read.
 
 Before releasing changes to configuration, checkpoints, journals or the managed
 installation descriptor, establish the reader compatibility boundary. A rollback
@@ -303,7 +325,10 @@ The CLI package declares its managed-runtime compatibility in `atapeRuntime`:
 `releaseCatalogProtocol: "atape.update-catalog.v1"`,
 `migrationReleaseCatalogProtocol: "atape.update-catalog.v2"`,
 `captureMigrationProtocol: "atape.capture-migration.v1"`, and the exact
-`captureMigration` plan/from-contract declaration. Publication checks the actual
+`captureMigration` plan/from-contract declaration. Target-capable packages also
+declare `updateTargetProtocol: "atape.update-target.v1"`,
+`targetReleaseCatalogProtocol: "atape.update-catalog.v3"` and their actual
+`releaseChannel`. Publication checks the actual
 CLI archive; clients validate these capabilities and the installed executable
 version before activation. Do not retain
 the marker across an incompatible state-format change merely to make unattended
@@ -330,8 +355,9 @@ v2 capabilities leave the source's journal and legacy checkpoint unchanged.
 
 The owned discovery origin is `https://updates.atape.net`. Cloudflare Workers
 Static Assets serves strict catalog JSON at `/catalog/v1.json` and
-`/catalog/v2.json`, with immutable descriptors at
-`/releases/<version>/bundle.v1.json` and `bundle.v2.json`. This is a static
+`/catalog/v2.json` plus target-owned `/catalog/v3.json`, with immutable descriptors
+at `/releases/<version>/bundle.v1.json`, `bundle.v2.json` and `bundle.v3.json`.
+Target-owned versions may have only a v3 descriptor. This is a static
 deployment without a dynamic proxy or client authentication. npm continues to
 serve the actual package archives. Existing published clients retain GitHub's
 catalog bridge; merging or deploying these files does not change their binaries.
@@ -340,7 +366,9 @@ catalog bridge; merging or deploying these files does not change their binaries.
 the current GitHub catalogs, version descriptors, release assets and public npm
 identities/bytes before writing a complete snapshot. It also reads the current
 static inventory, preserves historical exact descriptors and rejects catalog
-regression, removed routes or rewritten immutable versions. Historical valid
+regression, removed routes or rewritten immutable versions. The exporter reads
+the previous inventory and emits an inventory admitting v3-only versions;
+legacy descriptors remain byte-identical. Historical valid
 seven-package bundles remain valid. `manifest.json` binds the complete file
 inventory with SHA-256; it is publisher state, not a new client protocol or a
 signature. A missing inventory on an established site is an error.

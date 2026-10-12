@@ -87,6 +87,7 @@ globalThis.fetch=async (input,init)=> {
  if(address.startsWith("data:"))return inMemoryFetch(input,init);
  const fixture=JSON.parse(readFileSync(${JSON.stringify(publicRelease)},"utf8"));
  appendFileSync(${JSON.stringify(requests)},JSON.stringify({address,pid:process.pid})+"\n");
+ if(address===${JSON.stringify(releaseCatalogURL("atape.update-catalog.v3"))}||address===${JSON.stringify(releaseBundleURL(version,"atape.release-bundle.v3"))})return new Response(null,{status:404});
  for (const protocol of ["atape.release-bundle.v2","atape.release-bundle.v1"]) {
    const migration=protocol.endsWith("v2"), catalog=migration?"atape.update-catalog.v2":"atape.update-catalog.v1";
    const selected=migration?fixture.bundle:fixture.legacyBundle;

@@ -110,10 +110,10 @@ const advancesFloor = (floor: typeof Floor.Type | undefined, target: UpdateRunti
   !floor || older(floor.minimumRuntimeVersion, target.version) || floor.captureStateContract !== target.captureStateContract
 
 /** Node update-control Interface. The caller holds ATape's update ownership for
- * every control-ledger/selection mutation, including recovery, and quiesces the Collector before begin.
+ * every control-ledger/selection mutation, including recovery, and quiesces the Collector before begin or handoffTarget.
  * This Module never starts a Collector or interprets capture data. Its only
  * subprocess is a bounded direct version probe when rebinding npm. A fence must
- * finish before any incompatible target executable or migration is admitted.
+ * finish before any incompatible capture-state write is admitted.
  * Atomic file and directory syncs are joined; failed writes leave durable work
  * for recoverSelection rather than allowing the caller to infer completion. */
 export const createUpdateControl = (home: string) => {
@@ -266,6 +266,20 @@ export const createUpdateControl = (home: string) => {
     const selected = await readSelection()
     return selected && await bootstrapChanged(selected) ? selected : undefined
   }
+  const repairTargetPointer = async (ticket: UpdateControlTicket): Promise<UpdateRuntimeSelection> => {
+    const control = await transaction(ticket)
+    if (control.phase !== "completed" || !control.forwardOnly)
+      fail("conflict", "This update has no completed target execution boundary.")
+    await validateGeneration(control.target, true)
+    const release = await acquireRuntimeWriteBarrier()
+    try {
+      if (!isDeepStrictEqual(await transaction(ticket), control))
+        fail("conflict", "The target execution boundary changed before pointer repair.")
+      const selected = await unchanged([control.baseline, control.target])
+      if (!isDeepStrictEqual(selected, control.target)) await writeSelection(control.target)
+      return control.target
+    } finally { release() }
+  }
   return {
     readSelection,
     // Capture migration authority observes this boundary under the admission
@@ -309,6 +323,50 @@ export const createUpdateControl = (home: string) => {
     // the bootstrap. Unlike automatic begin, the old same-contract Collector
     // may remain active until the application's bounded pause/resume handoff.
     rebindBootstrap: (): Promise<UpdateRuntimeSelection> => bindReplacement(false),
+    // Execution authority only: target-private authorization must already bind
+    // this caller-owned key. Completed does not mean capture migration is ready.
+    // Retained bootstraps must never observe a public pending phase here.
+    handoffTarget: async (input: { readonly key: string; readonly next: UpdateRuntimeSelection; readonly previous?: UpdateRuntimeSelection }): Promise<UpdateControlTicket> => {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(input.key)) fail("metadata", "Invalid target execution key.")
+      const target = decodeUpdateRuntimeSelection(input.next), prior = await readControl()
+      if (prior?.key === input.key) {
+        if (prior.phase !== "completed" || !prior.forwardOnly || !isDeepStrictEqual(prior.target, target) ||
+          input.previous !== undefined && !isDeepStrictEqual(prior.previous, decodeUpdateRuntimeSelection(input.previous)))
+          fail("conflict", "The target execution key belongs to another boundary.")
+        await repairTargetPointer({ key: input.key })
+        return { key: input.key }
+      }
+      if (prior && prior.phase !== "completed" && prior.phase !== "recovered")
+        fail("conflict", "An unfinished update must recover before handing off execution.")
+      const baseline = await readSelection(), previous = input.previous === undefined ? baseline : decodeUpdateRuntimeSelection(input.previous)
+      if (baseline && previous && !isDeepStrictEqual(baseline, previous)) fail("conflict", "The previous runtime differs from the selected runtime.")
+      if (previous && older(target.version, previous.version)) fail("admission", "Automatic updates cannot downgrade the selected runtime.")
+      if (prior?.floor && older(target.version, prior.floor.minimumRuntimeVersion)) fail("admission", "The update is below the durable runtime reader floor.")
+      if (previous && !accepts(prior?.floor, previous)) fail("admission", "The previous runtime does not satisfy the durable reader floor.")
+      await validateGeneration(target, true)
+      if (previous) await validateGeneration(previous)
+      const release = await acquireRuntimeWriteBarrier()
+      let releaseProofs: (() => void) | undefined
+      try {
+        if (!isDeepStrictEqual(await readControl(), prior)) fail("conflict", "The update reader floor changed before target execution committed.")
+        await unchanged([baseline])
+        if (advancesFloor(prior?.floor, target)) {
+          releaseProofs = await creationAdmission.tryAcquireFence()
+          if (!releaseProofs) fail("conflict", "A controlled session is still confirming its creation proof; retry the update after confirmation.")
+        }
+        if (!isDeepStrictEqual(await readControl(), prior)) fail("conflict", "The target execution boundary was superseded before commit.")
+        await unchanged([baseline])
+        // A crash after this fsync leaves a settled public control record and
+        // the old capable pointer. Stable handoff recovery repairs that pointer
+        // before the target authorizes any private capture-format changes.
+        await writeControl({ protocol: updateControlProtocol, key: input.key, phase: "completed", target,
+          ...(baseline ? { baseline } : {}), ...(previous ? { previous } : {}), forwardOnly: true,
+          floor: { minimumRuntimeVersion: target.version, captureStateContract: target.captureStateContract } })
+        await writeSelection(target)
+      } finally { try { releaseProofs?.() } finally { release() } }
+      return { key: input.key }
+    },
+    repairTargetPointer,
     handoffRuntime: async (): Promise<UpdateRuntimeSelection | undefined> => {
       const control = await readControl()
       if (!control || control.phase === "completed" || control.phase === "recovered") return undefined

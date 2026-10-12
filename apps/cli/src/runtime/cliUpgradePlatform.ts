@@ -1,4 +1,4 @@
-import { decodeManagedReleaseBundle as decodeReleaseBundle, managedReleaseBundleFingerprint as releaseBundleFingerprint, updateCatalogProtocol } from "@atape/domain"
+import { decodeManagedReleaseBundle as decodeReleaseBundle, managedReleaseBundleFingerprint as releaseBundleFingerprint, updateCatalogProtocol, updateTargetProtocol } from "@atape/domain"
 import { CLIUpgradeError, CLIUpgradePlatform, isNewerReleaseVersion, isStableReleaseVersion } from "@atape/application"
 import { Effect, Layer, Schema } from "effect"
 import { executeOwnedProcess as execute } from "./ownedProcess.ts"
@@ -14,6 +14,7 @@ import { createUpdateControl, updateControlProtocol } from "./updateControl.ts"
 import { createReleaseDiscovery } from "./releaseDiscovery.ts"
 import { cliVersion, captureStateContract } from "../version.ts"
 import { inspectLocalAdapterPackage } from "./adapterPackageSource.ts"
+import { assertNoTargetUpdate } from "./targetUpdate.ts"
 
 const registry = "https://registry.npmjs.org/"
 const Manifest = Schema.Struct({ name: Schema.Literal("@atape/cli"), version: Schema.String })
@@ -102,7 +103,7 @@ export const makeCLIUpgradePlatformLayer = (
   fetchMetadata: typeof globalThis.fetch = globalThis.fetch,
   runtimeVersion: string = cliVersion
 ) => {
- const discovery = createReleaseDiscovery({ home, runtimeVersion, captureStateContract, updateControlProtocol, fetchMetadata,
+ const discovery = createReleaseDiscovery({ home, runtimeVersion, captureStateContract, updateControlProtocol, updateTargetProtocol, fetchMetadata,
    supportedMigrationPlans: [{ protocol: "atape.capture-migration.v1", id: "journal-v7-to-v8" }] })
  return Layer.succeed(CLIUpgradePlatform, CLIUpgradePlatform.of({
   acquireOwnership: () => Effect.acquireRelease(Effect.tryPromise({
@@ -110,7 +111,8 @@ export const makeCLIUpgradePlatformLayer = (
       const release = await acquireUpdateWorker(home)
       if (!release) throw new CLIUpgradeError({ reason: "installation",
         message: "Another ATape update is running. Wait for it to finish, then retry in Tools and updates." })
-      return release
+      try { await assertNoTargetUpdate(home); return release }
+      catch (cause) { release(); throw cause }
     },
     catch: cause => cause instanceof CLIUpgradeError ? cause : new CLIUpgradeError({ reason: "installation",
       message: "Could not acquire ATape update ownership. Check local update state and installation permissions." })
@@ -132,6 +134,7 @@ export const makeCLIUpgradePlatformLayer = (
     const cancellation = new AbortController()
     const signal = cancellation.signal
     const task = (async () => {
+      await assertNoTargetUpdate(home)
       const bundle = decodeReleaseBundle(value), version = bundle.version
       const run = (args: string[]) => execute("npm", args, environment, signal, 180_000)
       const current = await realpath(resolve(entry))

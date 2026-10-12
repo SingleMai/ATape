@@ -10,6 +10,7 @@ import { createUpdateControl } from "./runtime/updateControl.ts"
 import { legacyBridgeCaptureContract } from "./runtime/runtimeSelection.ts"
 import { captureStateContract } from "./version.ts"
 import { assertRuntimeDataAdmission, runtimeContext } from "./runtime/runtimeAdmission.ts"
+import { targetUpdatePending } from "./runtime/targetUpdate.ts"
 
 // Preserve the public parser's plain exit-2 response before reading selection
 // state. Invalid input never enters bootstrap recovery or update dispatch.
@@ -23,7 +24,8 @@ try {
     const control = createUpdateControl(paths.atapeHome)
     // An independent selection may have a newer opaque capture contract. The
     // historical bridge must delegate before interpreting v2 migration state.
-    if (captureStateContract === legacyBridgeCaptureContract && !await control.recoveryPending() && !await control.readSelection()) {
+    if (captureStateContract === legacyBridgeCaptureContract && !await targetUpdatePending(paths.atapeHome) &&
+      !await control.recoveryPending() && !await control.readSelection()) {
       await assertRuntimeDataAdmission(runtimeContext(paths.atapeHome))
       await Effect.runPromise(prepareManualStateUpgrade(paths))
     }

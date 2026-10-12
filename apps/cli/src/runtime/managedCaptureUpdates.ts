@@ -2,6 +2,7 @@ import { automaticUpdatesEnabled } from "@atape/application"
 import { ClientConfig, emptyClientConfig, type AdapterInstallation, type MigrationReleaseBundle } from "@atape/domain"
 import { isDeepStrictEqual } from "node:util"
 import { performance } from "node:perf_hooks"
+import { randomUUID } from "node:crypto"
 import { Schema } from "effect"
 import type { NodeClientPaths } from "./clientPaths.ts"
 import { withClientConfigFileLock } from "./clientConfig.ts"
@@ -9,7 +10,8 @@ import { withCollectorStateLockPromise } from "./collectorStateLock.ts"
 import { readCollectorSyncWanted, withCollectorMaintenance } from "./collectorDaemonLayers.ts"
 import { createCaptureMigrationCoordinator } from "./captureMigration.ts"
 import { inspectCaptureMigrationPrerequisitesScope } from "./captureMigrationPrerequisites.ts"
-import { createUpdateControl, updateControlProtocol, type UpdateRuntimeSelection } from "./updateControl.ts"
+import { createUpdateControl, UpdateControlError, updateControlProtocol, type UpdateRuntimeSelection } from "./updateControl.ts"
+import type { TargetUpdateHandoff } from "./targetUpdate.ts"
 import { applyRuntimeSelection, missing, readBoundedJSON, readEffectiveRuntimeSelection, resolveRuntimeEntry,
   type RuntimeSelection } from "./runtimeSelection.ts"
 
@@ -45,15 +47,18 @@ const applyBudget = (deadline: number) => {
  * while configuration, Collector state or admission barriers are held. */
 export const activateManagedCaptureUpdate = async (paths: NodeClientPaths, bootstrap: string,
   installedBootstrap: RuntimeSelection | UpdateRuntimeSelection, candidate: PreparedCaptureUpdate,
-  automatic: boolean, environment: NodeJS.ProcessEnv, signal: AbortSignal): Promise<void> => {
+  automatic: boolean, environment: NodeJS.ProcessEnv, signal: AbortSignal, targetUpdate?: TargetUpdateHandoff): Promise<void> => {
   const control = createUpdateControl(paths.atapeHome), migration = createCaptureMigrationCoordinator(paths, environment)
   const baseline = await config(paths), wanted = await readCollectorSyncWanted(paths.collectorProcessFile)
+  const source = admittedSelection(candidate.baselineSelection ?? installedBootstrap)
   const proof = await migration.preflight({ bundle: candidate.bundle, target: candidate.selection,
+    ...(targetUpdate ? { source: { version: source.version, captureStateContract: source.captureStateContract } } : {}),
     candidateConfig: applyRuntimeSelection(baseline, candidate.selection), wanted }, signal)
   let outer: { readonly key: string; readonly target: UpdateRuntimeSelection } | undefined
   const apply = async (deadline: number) => {
     checkDeadline(deadline)
     if (!outer) throw new Error("The migration has no owned executable boundary.")
+    if (targetUpdate) await migration.consumeTargetAuthorization(targetUpdate, signal)
     await migration.repairCompletedRequirement()
     if (await migration.recoveryPending()) {
       const attempt = await migration.nextAttempt(outer)
@@ -62,6 +67,15 @@ export const activateManagedCaptureUpdate = async (paths: NodeClientPaths, boots
     await migration.receipt(outer)
   }
   const restore = async (deadline: number) => {
+    if (targetUpdate && outer) {
+      let boundary
+      try { boundary = await control.migrationBoundary(outer.key) }
+      catch (cause) { if (!(cause instanceof UpdateControlError) || cause.reason !== "conflict") throw cause }
+      if (!boundary) { await migration.discardTargetAuthorization(targetUpdate); return }
+      await control.repairTargetPointer({ key: outer.key })
+      await apply(deadline)
+      return
+    }
     await withClientConfigFileLock(paths.configFile, async () => {
       checkDeadline(deadline)
       if (await control.recoveryPending()) await control.recoverSelection()
@@ -81,14 +95,21 @@ export const activateManagedCaptureUpdate = async (paths: NodeClientPaths, boots
         raw.projects.some(project => project.type === "git") !== candidate.hasGit ||
         !isDeepStrictEqual(await readEffectiveRuntimeSelection(paths.atapeHome), candidate.baselineSelection))
         throw new Error("The capture update baseline changed before activation.")
-      const ticket = await control.prepare({ next: candidate.selection,
-        previous: admittedSelection(candidate.baselineSelection ?? installedBootstrap) })
-      outer = { key: ticket.key, target: candidate.selection }
-      await migration.authorize(proof, outer, { candidateConfig: applyRuntimeSelection(raw, candidate.selection),
-        wanted: await readCollectorSyncWanted(paths.collectorProcessFile) }, signal)
-      checkDeadline(deadline)
-      await control.begin(ticket)
-      await control.fence(ticket)
+      const previous = admittedSelection(candidate.baselineSelection ?? installedBootstrap)
+      const scope = { candidateConfig: applyRuntimeSelection(raw, candidate.selection), wanted: await readCollectorSyncWanted(paths.collectorProcessFile) }
+      if (targetUpdate) {
+        outer = { key: randomUUID(), target: candidate.selection }
+        await migration.saveTargetAuthorization(proof, outer, targetUpdate, scope, signal)
+        checkDeadline(deadline)
+        await control.handoffTarget({ key: outer.key, next: candidate.selection, previous })
+      } else {
+        const ticket = await control.prepare({ next: candidate.selection, previous })
+        outer = { key: ticket.key, target: candidate.selection }
+        await migration.authorize(proof, outer, scope, signal)
+        checkDeadline(deadline)
+        await control.begin(ticket)
+        await control.fence(ticket)
+      }
     }), lockBudget(deadline))
     await apply(deadline)
   }, {
@@ -110,19 +131,28 @@ export const activateManagedCaptureUpdate = async (paths: NodeClientPaths, boots
 /** Recovery remains eligible after preference-off and Stop. It restores the
  * baseline only before the fence; every fenced retry executes the same target. */
 export const recoverManagedCaptureUpdate = async (paths: NodeClientPaths, bootstrap: string,
-  environment: NodeJS.ProcessEnv): Promise<boolean> => {
+  environment: NodeJS.ProcessEnv, targetUpdate?: TargetUpdateHandoff): Promise<boolean> => {
   const migration = createCaptureMigrationCoordinator(paths, environment)
-  const outer = await migration.pendingOuter()
-  if (!outer) return false
-  if (outer.completed) { await migration.repairCompletedRequirement(); return false }
+  const authorized = targetUpdate && await migration.pendingTargetAuthorization(targetUpdate)
   const control = createUpdateControl(paths.atapeHome)
+  if (authorized) {
+    let boundary
+    try { boundary = await control.migrationBoundary(authorized.key) }
+    catch (cause) { if (!(cause instanceof UpdateControlError) || cause.reason !== "conflict") throw cause }
+    if (!boundary) { await migration.discardTargetAuthorization(targetUpdate!); return false }
+  }
+  const outer = authorized ?? await migration.pendingOuter()
+  if (!outer) return false
+  if ("completed" in outer && outer.completed) { await migration.repairCompletedRequirement(); return false }
   const restore = async (deadline: number) => {
     await withClientConfigFileLock(paths.configFile, async () => {
       checkDeadline(deadline)
-      await control.recoverSelection()
+      if (authorized) await control.repairTargetPointer({ key: outer.key })
+      else await control.recoverSelection()
     }, lockBudget(deadline))
     const boundary = await control.migrationBoundary(outer.key)
     if (!boundary.forwardOnly) { await migration.abandon(outer); return }
+    if (authorized) await migration.consumeTargetAuthorization(targetUpdate!, AbortSignal.timeout(applyBudget(deadline)))
     await migration.repairCompletedRequirement()
     if (await migration.recoveryPending()) {
       const attempt = await migration.nextAttempt(outer)

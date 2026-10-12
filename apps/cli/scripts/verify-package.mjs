@@ -201,7 +201,7 @@ childProcess.spawn = function(file, args, options) {
 };
 globalThis.fetch = async function(url) {
   appendFileSync(${JSON.stringify(networkTrace)}, JSON.stringify({ url: String(url) }) + "\\n");
-  if (String(url) === ${JSON.stringify(releaseCatalogURL("atape.update-catalog.v2"))}) return new Response(null, { status: 404 });
+  if ([${JSON.stringify(releaseCatalogURL("atape.update-catalog.v3"))}, ${JSON.stringify(releaseCatalogURL("atape.update-catalog.v2"))}].includes(String(url))) return new Response(null, { status: 404 });
   throw new TypeError("Controlled offline package acceptance");
 };
 syncBuiltinESMExports();
@@ -293,9 +293,10 @@ syncBuiltinESMExports();
   const failed = await json(scheduleFile), requests = await rows(networkTrace)
   assert.equal(failed.failures, 1)
   assert.ok(failed.nextCheckAt > Date.now())
-  assert.equal(requests.length, 4)
-  assert.equal(requests[0].url, releaseCatalogURL("atape.update-catalog.v2"))
-  assert.ok(requests.slice(1).every(request => request.url === releaseCatalogURL("atape.update-catalog.v1")),
+  assert.equal(requests.length, 5)
+  assert.equal(requests[0].url, releaseCatalogURL("atape.update-catalog.v3"))
+  assert.equal(requests[1].url, releaseCatalogURL("atape.update-catalog.v2"))
+  assert.ok(requests.slice(2).every(request => request.url === releaseCatalogURL("atape.update-catalog.v1")),
     "An offline static metadata request must retry within its bounded budget")
   await wake(metadata.token)
   assert.equal((await rows(networkTrace)).length, requests.length)

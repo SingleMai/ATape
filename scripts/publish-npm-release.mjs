@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { loadReleaseContract } from "./release-contract.mjs"
 import { createPublicReleaseRegistry, loadPublicationArtifacts, isLegacyLatestBridge,
-  validatePublicationArtifacts } from "./public-release-visibility.mjs"
+  validatePublicationArtifacts, isTargetCapableLegacyRuntime, publicationCaptureContract,
+  publicationControlProtocol } from "./public-release-visibility.mjs"
 import { compareReleaseVersions, createGitHubPublication, publishUpdateCatalog, readPublicationTargets, preparePublicationMetadata,
   preflightVersionRelease } from "./publish-update-catalog.mjs"
 
@@ -15,25 +16,38 @@ import { compareReleaseVersions, createGitHubPublication, publishUpdateCatalog, 
 export async function publishRelease({ release, artifacts, registry, github, notes, commit,
   execute = promisify(execFile), log = message => process.stdout.write(message) }) {
   const bundle = validatePublicationArtifacts(artifacts)
-  if (bundle.version !== release.version || release.tag !== `v${bundle.version}`)
+  if (bundle.version !== release.version || release.tag !== `v${bundle.version}` || release.releaseChannel !== artifacts.releaseChannel)
     throw new Error("Only the matching same-capture.v2/control.v1 release may be published.")
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error("Publication requires an exact commit.")
   await github.verifyVersionTag(release.tag, commit)
   const targets = await readPublicationTargets(github)
   // Detect immutable same-version catalog conflicts before the first npm write.
-  preparePublicationMetadata(bundle, notes, targets.catalog, targets.migrationCatalog)
-  await preflightVersionRelease(github, bundle, notes)
+  preparePublicationMetadata(bundle, notes, targets.catalog, targets.migrationCatalog, targets.targetCatalog, artifacts.releaseChannel, artifacts.targetBundle)
+  await preflightVersionRelease(github, bundle, notes, artifacts.releaseChannel, artifacts.targetBundle)
   const latest = []
+  const latestManifests = new Map()
   const existing = new Map()
   for (const item of bundle.packages) {
     const [current, published] = await Promise.all([registry.read(item.name, "latest"), registry.read(item.name, bundle.version)])
-    if (current) latest.push(current.version)
+    if (current) { latest.push(current.version); latestManifests.set(item.name, current) }
     if (published && published.dist.integrity !== item.integrity) throw new Error(`${item.name}@${bundle.version} already exists with different tarball integrity.`)
     existing.set(item.name, published)
   }
   const advertised = [...latest, ...(targets.latestVersion ? [targets.latestVersion] : []),
     ...(targets.catalog?.bundles.map(item => item.version) ?? [])]
-  const tag = !isLegacyLatestBridge(bundle) || advertised.some(version => compareReleaseVersions(version, bundle.version) > 0) ? "atape-managed" : "latest"
+  if (artifacts.releaseChannel === "target-owned") {
+    const bridge = targets.catalog?.bundles.find(item => item.captureStateContract === publicationCaptureContract &&
+      item.updateControlProtocol === publicationControlProtocol)
+    const migration = targets.migrationCatalog?.routes.find(route => route.fromCaptureStateContract === publicationCaptureContract &&
+      route.updateControlProtocol === publicationControlProtocol)
+    if (!bridge || bridge.version !== targets.latestVersion || migration?.version !== bridge.version ||
+      latest.length !== bundle.packages.length || latest.some(version => version !== bridge.version) ||
+      !isTargetCapableLegacyRuntime(latestManifests.get("@atape/cli")?.atapeRuntime) ||
+      bridge.packages.length !== bundle.packages.length || bridge.packages.some(item =>
+        latestManifests.get(item.name)?.dist?.integrity !== item.integrity))
+      throw new Error("Target-owned publication requires a retained target-capable npm/GitHub/catalog legacy bridge with matching immutable package identities first.")
+  }
+  const tag = !isLegacyLatestBridge(bundle, artifacts.releaseChannel) || advertised.some(version => compareReleaseVersions(version, bundle.version) > 0) ? "atape-managed" : "latest"
   const ordered = [...bundle.packages.filter(item => item.name !== "@atape/cli"), bundle.packages.find(item => item.name === "@atape/cli")]
   const staging = await mkdtemp(join(tmpdir(), "atape-npm-publication-"))
   try {

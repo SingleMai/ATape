@@ -103,7 +103,8 @@ A paged factory declaring v3 or v5 must require the selected profile in
 verifies manifest/runtime agreement and affirms that Canonical profile on the
 Server before collecting or mutating progress. Neither an ignored optional field
 nor a null source clock implicitly selects a profile. The published 0.5.10 Host
-supports v3, while the current Codex revision requires a supporting v5 Host.
+supports v3, as does the genuine 0.5.11 bridge's official Codex Adapter. The
+subsequent v5 provider revision requires a supporting v5 Host.
 See [ADR-0122](../architecture/adr/0122-explicit-legacy-source-clocks.md) and
 [the v5 boundary](#bounded-source-capture-capability).
 
@@ -213,9 +214,10 @@ The unpublished v5 contract also admits optional `atape.dev/file-activity`
 with bounded explicit read/edit/search path entries; v4 continues rejecting it.
 Copied source fields must remain admitted for upload redaction. See
 [recorded file activity](../session-analytics.md#recorded-file-activity).
-V4 still accepts only MCP/Skill identities. Current checkout Claude declares
-publication target v5 and checks explicit v5 Host support; Codex declares the
-paged legacy Canonical v5 profile and checks its local Host advertisement.
+V4 still accepts only MCP/Skill identities. The subsequent target-owned feature
+release's Claude declares publication target v5 and checks explicit v5 Host
+support; Codex declares the paged legacy Canonical v5 profile and checks its
+local Host advertisement. The 0.5.11 bridge retains genuine v3/v4 providers.
 Server discovery exposes Canonical v5 only to the new opt-in
 `ATape-Accept-Canonical-Profile: atape.acp-centered.v5`; the default retains
 v2/v3/v4 for published clients. Publication v5 likewise requires the explicit
@@ -238,7 +240,9 @@ it, so v4's historical compatibility encoding does not establish v5 rollback.
 
 This increment is not part of the published/deployed 0.5.10 release. A supporting
 Server, CLI and Adapters must be updated together before collection starts.
-Versions in this checkout remain 0.5.10 until a separate release. See
+The 0.5.11 bridge candidate adds target-owned update capability while retaining
+older official provider output. Its publication must precede the v5 feature
+release, and legacy discovery retains that bridge indefinitely. See
 [v5 ingestion](../api/canonical-ingestion.md#v5-stable-native-tool-identity) and
 [upgrade recovery](../cli/setup-and-adapters.md#stable-native-tool-identity-checkout-increment).
 

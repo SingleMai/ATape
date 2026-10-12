@@ -22,6 +22,8 @@ export type ParsedCLI =
   | { readonly kind: "__automatic-update"; readonly options: { readonly updateToken: string } }
   | { readonly kind: "__login-start"; readonly options: { readonly startupToken: string } }
   | { readonly kind: "__update-wake"; readonly options: { readonly wakeToken: string } }
+  | { readonly kind: "__update-target"; readonly options: { readonly id: string; readonly token: string;
+    readonly action: "prepare" | "activate" | "recover" | "owner-recover" | "owner-protected"; readonly nonce?: string } }
   | { readonly kind: "__capture-migration-preflight"; readonly options: { readonly requestId: string; readonly token: string } }
   | { readonly kind: "__capture-migration-apply"; readonly options: {
     readonly outerKey: string; readonly attemptId: string; readonly token: string; readonly bundleFingerprint: string
@@ -38,12 +40,13 @@ export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
   const wake = args[0] === "__update-wake"
   const start = args[0] === "start"
   const migration = args[0] === "__capture-migration-preflight" || args[0] === "__capture-migration-apply"
+  const target = args[0] === "__update-target"
   const redaction = args[0] === "redaction-test"
   const fail = (): never => { throw new CLIInputError(t("cli.error.input", "Unsupported arguments. Run atape to manage projects, tools and settings, or atape --help.")) }
   let parsed: ReturnType<typeof parseArgs>
   try { parsed = parseArgs({
     args: [...args], allowPositionals: true, strict: true, tokens: true,
-    options: migration ? {} : start ? { help: { type: "boolean", short: "h" }, lang: { type: "string" }, tool: { type: "string" }, project: { type: "string" }, prompt: { type: "string" } } : redaction ? {
+    options: migration || target ? {} : start ? { help: { type: "boolean", short: "h" }, lang: { type: "string" }, tool: { type: "string" }, project: { type: "string" }, prompt: { type: "string" } } : redaction ? {
       help: { type: "boolean", short: "h" }, lang: { type: "string" },
       config: { type: "string" }, format: { type: "string" }
     } : wake ? { "wake-token": { type: "string" } } : login ? { "startup-token": { type: "string" } } : updater ? { "update-token": { type: "string" } } : internal ? {
@@ -54,6 +57,15 @@ export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
     }
   }) } catch { return fail() }
   const { values, positionals, tokens } = parsed
+  if (target) {
+    const uuid = (value: string | undefined) => value !== undefined && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value)
+    const owner = positionals[3]?.startsWith("owner-")
+    if (positionals.length !== (owner ? 5 : 4) || !uuid(positionals[1]) || !uuid(positionals[2]) || owner && !uuid(positionals[4]) ||
+      !["prepare", "activate", "recover", "owner-recover", "owner-protected"].includes(positionals[3]!)) return fail()
+    return { kind: "__update-target", options: { id: positionals[1]!, token: positionals[2]!,
+      action: positionals[3] as "prepare" | "activate" | "recover" | "owner-recover" | "owner-protected",
+      ...(owner ? { nonce: positionals[4]! } : {}) } }
+  }
   if (migration) {
     const uuid = (value: string | undefined) => value !== undefined &&
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value)

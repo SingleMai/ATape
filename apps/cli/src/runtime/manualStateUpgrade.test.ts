@@ -1,5 +1,5 @@
 import { CollectorDaemonProcess } from "@atape/application"
-import { emptyClientConfig } from "@atape/domain"
+import { emptyClientConfig, releasePackageNames, updateTargetProtocol, type MigrationReleaseBundle, type TargetReleaseBundle } from "@atape/domain"
 import { Effect } from "effect"
 import { createHash, randomUUID } from "node:crypto"
 import { execFile } from "node:child_process"
@@ -17,6 +17,9 @@ import { acquireUpdateWorker } from "./updateOwnership.ts"
 import { createUpdateControl, updateControlProtocol, type UpdateRuntimeSelection } from "./updateControl.ts"
 import { legacyBridgeCaptureContract, readRuntimeSelection, resolveRuntimeEntry, runtimeEntry, runtimeSelectionFile } from "./runtimeSelection.ts"
 import { runtimeWriterFixture } from "./fixtures/runtime-writer-admission.ts"
+import { advanceTargetUpdate, beginTargetUpdate } from "./targetUpdate.ts"
+import { captureMigrationPlan, captureMigrationProtocol, migrationBundleHash, requirementHash,
+  writeCaptureMigrationLedger, writeCaptureMigrationRequired, type CaptureMigrationRequired } from "./captureMigrationAdmission.ts"
 
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -80,7 +83,7 @@ setInterval(() => {}, 1000);
     await mkdir(dirname(entry), { recursive: true })
     await writeFile(entry, source(version))
     await writeFile(join(dirname(dirname(entry)), "package.json"), JSON.stringify({ name: "@atape/cli", version, type: "module",
-      atapeRuntime: { stateContract: captureStateContract, updateControlProtocol } }))
+      atapeRuntime: { stateContract: captureStateContract, updateControlProtocol, updateTargetProtocol } }))
   }
   await writePackage(bootstrap, "0.5.4")
   const bootstrapIdentity = createHash("sha256").update(await readFile(bootstrap)).digest("hex")
@@ -101,6 +104,36 @@ setInterval(() => {}, 1000);
     daemon: (failVersion?: string) => Effect.runPromise(CollectorDaemonProcess.pipe(Effect.provide(makeNodeCollectorDaemonLayer(
       f.paths, () => resolveRuntimeEntry(f.home, bootstrap), { ...process.env, ATAPE_HOME: f.home, ATAPE_TEST_FAIL_VERSION: failVersion }
     )))) }
+}
+
+// The metadata Interfaces certify an empty registered inventory here. Actual
+// journal migration is covered by its own SQL callers and the installed gate.
+const completedTargetFixture = async () => {
+  const f = await controlFixture(), outerKey = randomUUID()
+  const bundle: TargetReleaseBundle = { protocol: "atape.release-bundle.v3", version: f.next.version,
+    captureStateContract: legacyBridgeCaptureContract, updateControlProtocol, updateTargetProtocol,
+    fromCaptureStateContracts: [legacyBridgeCaptureContract], packages: releasePackageNames.map(name => ({ name,
+      integrity: `sha512-${createHash("sha512").update(name).digest("base64")}`,
+      tarball: `https://registry.npmjs.org/${name}/-/${name.slice(7)}-${f.next.version}.tgz` })) }
+  const preparing = await beginTargetUpdate(f.paths, { bundle, bootstrapEntry: f.bootstrap, automatic: true })
+  const prepared = await advanceTargetUpdate(preparing, "prepared", randomUUID())
+  const job = await advanceTargetUpdate(prepared, "activating", prepared.preparedKey!)
+  const migrationBundle: MigrationReleaseBundle = { protocol: "atape.release-bundle.v2", version: bundle.version,
+    captureStateContract: bundle.captureStateContract, updateControlProtocol, packages: bundle.packages,
+    migration: { protocol: captureMigrationProtocol, id: captureMigrationPlan, fromCaptureStateContracts: [legacyBridgeCaptureContract] } }
+  const completeCapture = async (key = outerKey) => {
+    const body = { outerKey: key, home: f.home, paths: f.paths, bundle: migrationBundle,
+      bundleFingerprint: migrationBundleHash(migrationBundle), source: { version: f.previous.version, captureStateContract: legacyBridgeCaptureContract },
+      target: f.next, inventory: [], prerequisiteScopeFingerprint: "a".repeat(64) }
+    const required: CaptureMigrationRequired = { protocol: "atape.capture-migration-required.v1", requirement: { ...body, hash: requirementHash(body) } }
+    await writeCaptureMigrationRequired(f.home, required)
+    await writeCaptureMigrationLedger(f.home, { protocol: captureMigrationProtocol, required, phase: "completed", progress: [],
+      receipt: { protocol: "atape.capture-migration-receipt.v1", outerKey: key, requirementHash: required.requirement.hash,
+        bundleFingerprint: required.requirement.bundleFingerprint, planId: captureMigrationPlan,
+        target: { version: f.next.version, captureStateContract: legacyBridgeCaptureContract }, accounts: [] } })
+    return required
+  }
+  return { ...f, outerKey, job, completeCapture }
 }
 
 describe("explicit manual state upgrade through its interactive caller Interface", () => {
@@ -301,6 +334,57 @@ setInterval(() => {}, 1000);
       finally { release?.() }
     }
   }, 30_000)
+
+  it.skipIf(process.platform === "win32")("renews the real Collector after completed target execution and exact capture receipt", async () => {
+    const f = await completedTargetFixture(), daemon = await f.daemon(), release = await acquireUpdateWorker(f.home)
+    expect(release).toBeTypeOf("function")
+    try {
+      const original = await Effect.runPromise(daemon.start({ intervalMs: 30_000, concurrency: 1 }))
+      await expect.poll(f.readProof, { timeout: 15_000 }).toMatchObject({ pid: original.pid })
+      await withCollectorMaintenance(f.paths, () => resolveRuntimeEntry(f.home, f.bootstrap),
+        { ...process.env, ATAPE_HOME: f.home }, async () => {
+          await f.control.handoffTarget({ key: f.outerKey, next: f.next, previous: f.previous })
+          expect(await f.control.recoveryPending()).toBe(false)
+          await f.completeCapture()
+        }, { readyTimeoutMs: 10_000 })
+      const current = await Effect.runPromise(daemon.inspect())
+      expect(current?.pid).not.toBe(original.pid)
+      const processRecord = JSON.parse(await readFile(f.paths.collectorProcessFile, "utf8"))
+      expect(await f.readProof()).toMatchObject({ pid: current?.pid, token: processRecord.token })
+      expect(await f.control.readSelection()).toEqual(f.next)
+      await absent(f.ledgerFile)
+      await absent(f.maintenanceFile)
+      expect(await f.persisted()).toEqual(f.config)
+      expect(await readFile(f.captureFile)).toEqual(f.captureBytes)
+    } finally {
+      try { await Effect.runPromise(daemon.stop()) }
+      finally { release?.() }
+    }
+  }, 30_000)
+
+  it.each(["absent handoff", "unactivated handoff", "incomplete capture", "different capture key", "different selected target", "changed executable", "foreign runtime", "no owner"] as const)(
+    "rejects %s instead of treating a completed execution floor as Collector admission", async kind => {
+      const f = await completedTargetFixture(), release = await acquireUpdateWorker(f.home)
+      expect(release).toBeTypeOf("function")
+      try {
+        await f.control.handoffTarget({ key: f.outerKey, next: f.next, previous: f.previous })
+        const required = await f.completeCapture(kind === "different capture key" ? randomUUID() : f.outerKey)
+        await writeFile(f.paths.collectorProcessFile, JSON.stringify({ ...f.record,
+          runtimeKey: kind === "foreign runtime" ? "foreign" : await f.runtimeKey(runtimeEntry(f.home, f.next.version)) }))
+        await writeFile(f.maintenanceFile, JSON.stringify(f.startingGate))
+        if (kind === "absent handoff") await rm(join(f.home, "updates", "target-update.json"))
+        if (kind === "unactivated handoff") await advanceTargetUpdate(f.job, "prepared", f.job.preparedKey!)
+        if (kind === "incomplete capture") await writeCaptureMigrationLedger(f.home, { protocol: captureMigrationProtocol, required, phase: "authorized", progress: [] })
+        if (kind === "different selected target") await writeFile(join(f.home, "updates", "runtime.json"), JSON.stringify(f.previous))
+        if (kind === "changed executable") await writeFile(runtimeEntry(f.home, f.next.version), "changed immutable target")
+        if (kind === "no owner") release?.()
+        await expect(Effect.runPromise(recordV2CollectorAdmission(f.paths, f.record.token))).rejects.toMatchObject({ reason: "metadata" })
+        await absent(f.proofFile)
+        await absent(f.ledgerFile)
+        expect(await f.persisted()).toEqual(f.config)
+        expect(await readFile(f.captureFile)).toEqual(f.captureBytes)
+      } finally { release?.() }
+    })
 
   it.skipIf(process.platform === "win32")("renews admission for the compatible npm fallback after a failed first control handoff", async () => {
     const f = await controlFixture(), daemon = await f.daemon("0.5.5")

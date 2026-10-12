@@ -10,6 +10,7 @@ import type { NodeClientPaths } from "./clientPaths.ts"
 import { atomicJSON, missing, readSelectedClientConfig, updateDirectory } from "./runtimeSelection.ts"
 import { createUpdateControl } from "./updateControl.ts"
 import { createCaptureMigrationCoordinator } from "./captureMigration.ts"
+import { targetUpdatePending } from "./targetUpdate.ts"
 
 const failure = (cause: unknown) => cause instanceof Error ? cause : new Error(String(cause))
 const io = <A>(run: () => Promise<A>) => Effect.tryPromise({ try: run, catch: failure })
@@ -55,7 +56,8 @@ export const prepareCollectorReadiness = (
   // Report readiness before waiting so an older updater can complete handoff.
   // Its pending journal outlives the maintenance gate: no job may write newer
   // state while that transaction can still restore the previous executable.
-  while (yield* io(async () => await isCollectorMaintenancePending(paths.collectorProcessFile) ||
+  while (yield* io(async () => await targetUpdatePending(paths.atapeHome) ||
+    await isCollectorMaintenancePending(paths.collectorProcessFile) ||
     await updateTransactionPending(paths.atapeHome) ||
     await createCaptureMigrationCoordinator(paths, environment).recoveryPending() ||
     await createUpdateControl(paths.atapeHome).recoveryPending())) {

@@ -167,7 +167,7 @@ const capture = async (priorCheckpoint?: string, rawEnabled = true, priorThreads
   try {
     const root = (await readFile(file, "utf8")).split("\n").slice(0, -1).filter(Boolean).map(line => JSON.parse(line) as Row).find(row => typeof row.uuid === "string")!
     const view = await runtime.sourceCapture.open({ sourceId: root.sessionId, rawEnabled, priorThreads, ...(priorCheckpoint === undefined ? {} : { priorCheckpoint }), limits,
-      projection: { events: 100000, usage: 100000, pageItems: 1, pageBytes: 32 * 1024 * 1024, canonicalProfiles: ["atape.acp-centered.v5"] }, signal: context.signal })
+      projection: { events: 100000, usage: 100000, pageItems: 1, pageBytes: 32 * 1024 * 1024, canonicalProfiles: ["atape.acp-centered.v4"] }, signal: context.signal })
     try {
       const header = Schema.decodeUnknownSync(SourceCaptureHeaderV2)(view), frames: SourceCaptureFrame[] = []
       for (;;) { const page = Schema.decodeUnknownSync(SourceCapturePage)(await view.read(context.signal)); frames.push(...page.frames); if (page.done) break }

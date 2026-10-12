@@ -1,4 +1,5 @@
 import { CollectorRunStatusStore, makeGitSourceAttributionLayer } from "@atape/application"
+import { updateTargetProtocol } from "@atape/domain"
 import { cliVersion, captureStateContract } from "../version.ts"
 import { hostname, platform, arch } from "node:os"
 import { Effect, Layer } from "effect"
@@ -18,9 +19,9 @@ import { createReleaseDiscovery } from "./releaseDiscovery.ts"
 import { runtimeContext } from "./runtimeAdmission.ts"
 import { updateControlProtocol } from "./updateControl.ts"
 import { makeGitSourceBindingsLayer } from "./gitSourceBindings.ts"
-import { makeAutomaticUpdatePlatformLayer, protectedRuntimeSlots } from "./managedUpdates.ts"
+import { makeAutomaticUpdatePlatformLayer, protectedRuntimeSlots, type TargetUpdateExecution } from "./managedUpdates.ts"
 import { makeLoginStartupPlatformLayer } from "./loginStartup.ts"
-import { makeUpdateWakePlatformLayer } from "./updateWake.ts"
+import { makeUpdateWakePlatformLayer, prepareUpdateWakeRecoveryRuntime } from "./updateWake.ts"
 import { makeRedactionSettingsLayer } from "./redactionSettings.ts"
 import { makeSelectedConfigStoreLayer, readSelectedClientConfig, resolveRuntimeEntry, selectedBootstrap } from "./runtimeSelection.ts"
 
@@ -35,7 +36,7 @@ export const makeNodeClientLayer = (
   environment: NodeJS.ProcessEnv = process.env,
   fetchAdapterPackage: AdapterPackageFetch = globalThis.fetch,
   fetchAuthentication: typeof globalThis.fetch = globalThis.fetch,
-  options: { readonly collectorToken?: string } = {}
+  options: { readonly collectorToken?: string; readonly targetUpdateExecution?: TargetUpdateExecution } = {}
 ) => {
   const authentication = makeNodeAuthenticationLayer({
     atapeHome: paths.atapeHome,
@@ -68,9 +69,10 @@ export const makeNodeClientLayer = (
     Layer.provide(Layer.mergeAll(authenticatedHTTP, gitAttribution, locator))
   )
   const discovery = createReleaseDiscovery({ home: paths.atapeHome, runtimeVersion: cliVersion,
-    captureStateContract, updateControlProtocol, fetchMetadata: fetchAdapterPackage,
+    captureStateContract, updateControlProtocol, updateTargetProtocol, fetchMetadata: fetchAdapterPackage,
     supportedMigrationPlans: [{ protocol: "atape.capture-migration.v1", id: "journal-v7-to-v8" }] })
-  const packages = makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage, () => protectedRuntimeSlots(paths.atapeHome), discovery)
+  const packages = makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage,
+    () => protectedRuntimeSlots(paths.atapeHome, options.targetUpdateExecution !== undefined), discovery)
   const bootstrapEntry = environment.ATAPE_BOOTSTRAP_ENTRY ?? process.argv[1] ?? ""
   return Layer.mergeAll(
     authentication,
@@ -85,7 +87,9 @@ export const makeNodeClientLayer = (
     makeUpdateWakePlatformLayer(paths, bootstrapEntry, environment),
     locator,
     packages,
-    makeAutomaticUpdatePlatformLayer(paths, bootstrapEntry, cliVersion, environment).pipe(Layer.provide(packages)),
+    makeAutomaticUpdatePlatformLayer(paths, bootstrapEntry, cliVersion, environment, fetchAdapterPackage,
+      { ...(options.targetUpdateExecution ? { targetExecution: options.targetUpdateExecution } : {}),
+        prepareWakeRecoveryRuntime: (bootstrap, signal) => prepareUpdateWakeRecoveryRuntime(paths, bootstrap, signal) }).pipe(Layer.provide(packages)),
     projectSetup,
     collector,
     makeNodeCollectorDaemonLayer(paths, async () => resolveRuntimeEntry(paths.atapeHome,

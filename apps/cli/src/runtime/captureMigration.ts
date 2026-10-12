@@ -1,6 +1,6 @@
 import { ClientConfig, CollectorState, MigrationReleaseBundle, decodeMigrationReleaseBundle, type MigrationReleaseBundle as Bundle } from "@atape/domain"
 import { randomUUID } from "node:crypto"
-import { lstat, rm } from "node:fs/promises"
+import { lstat, open, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { isDeepStrictEqual } from "node:util"
 import { Effect, Schema } from "effect"
@@ -12,6 +12,7 @@ import { runtimeContext, type RuntimeContext } from "./runtimeAdmission.ts"
 import { atomicJSON, missing, readBoundedJSON, updateDirectory } from "./runtimeFiles.ts"
 import { executeOwnedProcess } from "./ownedProcess.ts"
 import { createUpdateControl, UpdateRuntimeSelection, type UpdateRuntimeSelection as Selection } from "./updateControl.ts"
+import { readTargetUpdateHandoff, targetUpdateRequestHash, type TargetUpdateHandoff } from "./targetUpdate.ts"
 import { acquireCaptureMigrationWriteAuthority, assertMigrationMetadataBound, canonicalMigrationPaths, captureMigrationAuthorityRequirement, CaptureMigrationAttempt,
   CaptureMigrationReceipt, captureMigrationPlan, captureMigrationProtocol, guardCaptureMigrationWrite, migrationBundleHash, migrationError, migrationFailure,
   migrationHash, readCaptureMigrationPair, readMigrationJSON, RegisteredJournalObservation, removeCaptureMigrationPair, requirementHash,
@@ -30,6 +31,9 @@ const Request = Schema.Struct({ protocol: Schema.Literal("atape.capture-migratio
   paths: Paths, bundle: MigrationReleaseBundle, source: Identity, target: UpdateRuntimeSelection, candidateConfig: ClientConfig, wanted: Schema.Boolean,
   inventory: Schema.Array(RegisteredJournalObservation), prerequisiteScopeFingerprint: Hash })
 type Request = typeof Request.Type
+const TargetAuthorization = Schema.Struct({ protocol: Schema.Literal("atape.target-capture-authorization.v1"),
+  jobId: UUID, jobToken: UUID, jobHash: Hash, outerKey: UUID, request: Request })
+type TargetAuthorization = typeof TargetAuthorization.Type
 const Report = Schema.Struct({ protocol: Schema.Literal("atape.capture-migration-preflight.v1"), requestId: UUID, requestHash: Hash,
   bundleFingerprint: Hash, migrationProtocol: Schema.Literal(captureMigrationProtocol), planId: Schema.Literal(captureMigrationPlan), source: Identity,
   actualTarget: Identity, inventoryFingerprint: Hash, prerequisiteScopeFingerprint: Hash, inventory: Schema.Array(RegisteredJournalObservation) })
@@ -43,6 +47,18 @@ export type ValidatedCaptureMigration = { readonly [proofBrand]: true; readonly 
 const strict = <A>(schema: Schema.ConstraintDecoder<A>, value: unknown): A => Schema.decodeUnknownSync(schema, { onExcessProperty: "error" })(value)
 function fail(reason: Parameters<typeof migrationFailure>[0], message: string): never { throw migrationFailure(reason, message) }
 const requestFile = (home: string, id: string) => join(updateDirectory(home), "capture-migration-requests", `${strict(UUID, id)}.json`)
+const targetAuthorizationFile = (home: string, id: string) => join(updateDirectory(home), "target-capture-intents", `${strict(UUID, id)}.json`)
+const removeTargetAuthorization = async (home: string, id: string) => {
+  const file = targetAuthorizationFile(home, id)
+  await rm(file, { force: true })
+  const directory = await open(dirname(file), "r")
+  try { await directory.sync() } finally { await directory.close() }
+}
+export const targetCaptureAuthorizationPending = async (home: string) => {
+  const job = await readTargetUpdateHandoff(home)
+  if (!job) return false
+  return (await exists(targetAuthorizationFile(home, job.id))) !== undefined
+}
 const childEnvironment = (environment: NodeJS.ProcessEnv, paths: NodeClientPaths): NodeJS.ProcessEnv => ({ ...environment,
   ATAPE_HOME: paths.atapeHome, ATAPE_CONFIG_FILE: paths.configFile, ATAPE_COLLECTOR_STATE_FILE: paths.collectorStateFile,
   ATAPE_COLLECTOR_PROCESS_FILE: paths.collectorProcessFile, ATAPE_COLLECTOR_STATUS_FILE: paths.collectorStatusFile,
@@ -116,6 +132,24 @@ const receiptFor = (requirement: CaptureMigrationRequirement): CaptureMigrationR
   outerKey: requirement.outerKey, requirementHash: requirement.hash, bundleFingerprint: requirement.bundleFingerprint, planId: captureMigrationPlan,
   target: { version: requirement.target.version, captureStateContract: requirement.target.captureStateContract },
   accounts: requirement.inventory.map(account => ({ key: account.key, bindingHash: account.bindingHash, result: account.deferred ? "deferred-initialization" : "v8" })) })
+const plannedRequirement = (request: Request, outer: MigrationOuter, paths: NodeClientPaths): CaptureMigrationRequirement => {
+  const body = { outerKey: outer.key, home: paths.atapeHome, paths, bundle: request.bundle, bundleFingerprint: migrationBundleHash(request.bundle),
+    source: request.source, target: outer.target, inventory: request.inventory, prerequisiteScopeFingerprint: request.prerequisiteScopeFingerprint }
+  return { ...body, hash: requirementHash(body) }
+}
+const plannedAuthorization = (requirement: CaptureMigrationRequirement, prior: Awaited<ReturnType<typeof readCaptureMigrationPair>>) => {
+  if (prior.known && (!prior.required || prior.ledger?.phase !== "completed" || !prior.ledger.receipt))
+    fail("conflict", "An earlier capture migration must recover first.")
+  const required: CaptureMigrationRequired = { protocol: "atape.capture-migration-required.v1", requirement,
+    ...(prior.ledger?.receipt ? { priorCompleted: { requirement: prior.ledger.required.requirement, receipt: prior.ledger.receipt } } : {}) }
+  // Bound every derivable durable shape before forward-only execution handoff.
+  // The predecessor receipt is part of the exact bound, not an estimate.
+  const plannedReceipt = receiptFor(requirement), base = baseLedger(required), plannedAttempt = {
+    outerKey: requirement.outerKey, attemptId: randomUUID(), token: randomUUID(), bundleFingerprint: requirement.bundleFingerprint, expiresAt: Number.MAX_SAFE_INTEGER }
+  for (const shape of [required, base, { ...base, phase: "applying", attempt: plannedAttempt, progress: plannedReceipt.accounts },
+    { ...base, phase: "completed", progress: plannedReceipt.accounts, receipt: plannedReceipt }]) assertMigrationMetadataBound(shape)
+  return required
+}
 const repairPair = async (home: string) => {
   const pair = await readCaptureMigrationPair(home)
   if (!pair.known) fail("conflict", "No capture migration requirement is pending.")
@@ -143,13 +177,61 @@ export const createCaptureMigrationCoordinator = (paths: NodeClientPaths, enviro
     if (!pair.required) await writeCaptureMigrationRequired(home, pair.known)
     return pair.ledger.receipt
   })
-  return {
-    async preflight(input: { readonly bundle: Bundle; readonly target: Selection } & Scope, signal: AbortSignal): Promise<ValidatedCaptureMigration> {
-      validatePlan(input.bundle, actualSource.identity, input.target)
+  const targetAuthorization = async (job: TargetUpdateHandoff): Promise<TargetAuthorization | undefined> => {
+    let intent: TargetAuthorization
+    try { intent = strict(TargetAuthorization, await readMigrationJSON(targetAuthorizationFile(home, job.id), 4 * 1024 * 1024)) }
+    catch (cause) { if (missing(cause)) return undefined; throw cause }
+    const current = await readTargetUpdateHandoff(home)
+    if (!current || job.phase !== "activating" || intent.jobId !== job.id || intent.jobToken !== job.token ||
+      intent.jobHash !== targetUpdateRequestHash(job) || targetUpdateRequestHash(current) !== intent.jobHash ||
+      intent.request.target.version !== job.bundle.version || intent.request.target.captureStateContract !== job.bundle.captureStateContract ||
+      !isDeepStrictEqual(intent.request.bundle.packages, job.bundle.packages) ||
+      !isDeepStrictEqual({ version: intent.request.target.version, captureStateContract: intent.request.target.captureStateContract }, actualSource.identity))
+      fail("conflict", "The target capture authorization does not belong to this immutable request.")
+    validatePlan(intent.request.bundle, intent.request.source, intent.request.target)
+    return intent
+  }
+  const authorizeValidated = async (proof: ValidatedCaptureMigration, outer: MigrationOuter, current: Scope, signal: AbortSignal,
+    targetIntent?: TargetAuthorization): Promise<void> => {
+    const validated = targetIntent?.request ?? proofs.get(proof)
+    if (!validated || signal.aborted || !isDeepStrictEqual(validated.target, outer.target)) fail("conflict", "Capture migration proof does not authorize this target.")
+    const canonical = await canonicalMigrationPaths(paths)
+    if (!isDeepStrictEqual(canonical, validated.paths)) fail("conflict", "Capture migration storage changed after preflight.")
+    await withCaptureMigrationBarrier(home, async () => {
+      const control = createUpdateControl(home), boundary = await control.migrationBoundary(outer.key), prior = await readCaptureMigrationPair(home)
+      if (!isDeepStrictEqual(boundary.target, outer.target) || (targetIntent
+        ? boundary.phase !== "completed" || !boundary.forwardOnly || !isDeepStrictEqual(boundary.selection, outer.target)
+        : boundary.phase !== "prepared" || boundary.forwardOnly)) fail("conflict", "Capture migration authorization requires its exact executable boundary.")
+      if (targetIntent && (!boundary.previous || !isDeepStrictEqual(validated.source,
+        { version: boundary.previous.version, captureStateContract: boundary.previous.captureStateContract })))
+        fail("conflict", "Target capture authorization has a different executable source.")
+      if (!targetIntent) await control.assertRuntimeAdmission(validated.source)
+      const requirement = plannedRequirement(validated, outer, canonical)
+      if (targetIntent && prior.known?.requirement.outerKey === outer.key) {
+        if (prior.known.requirement.hash !== requirement.hash) fail("conflict", "Target authorization differs from its existing capture requirement.")
+        await repairPair(home)
+        return
+      }
+      const inventory = await localInventory(canonical)
+      const scope = targetIntent ? { prerequisiteScopeFingerprint: validated.prerequisiteScopeFingerprint }
+        : await inspectCaptureMigrationPrerequisitesScope(canonical, current)
+      if (!isDeepStrictEqual(inventory, validated.inventory) || scope.prerequisiteScopeFingerprint !== validated.prerequisiteScopeFingerprint)
+        fail("conflict", "Capture migration scope or inventory changed after preflight.")
+      const required = plannedAuthorization(requirement, prior)
+      await writeCaptureMigrationRequired(home, required)
+      await writeCaptureMigrationLedger(home, baseLedger(required))
+    })
+  }
+  const coordinator = {
+    async preflight(input: { readonly bundle: Bundle; readonly target: Selection;
+      readonly source?: RuntimeContext["identity"] } & Scope, signal: AbortSignal): Promise<ValidatedCaptureMigration> {
+      const source = input.source ?? actualSource.identity
+      validatePlan(input.bundle, source, input.target)
+      await createUpdateControl(home).assertRuntimeAdmission(source)
       const canonical = await canonicalMigrationPaths(paths), entry = await targetEntry(canonical.atapeHome, input.target)
       const inventory = await localInventory(canonical), scope = await inspectCaptureMigrationPrerequisitesScope(canonical, input)
       const request: Request = { protocol: "atape.capture-migration-request.v1", requestId: randomUUID(), token: randomUUID(), paths: canonical,
-        bundle: input.bundle, source: actualSource.identity, target: input.target, candidateConfig: input.candidateConfig, wanted: input.wanted,
+        bundle: input.bundle, source, target: input.target, candidateConfig: input.candidateConfig, wanted: input.wanted,
         inventory, prerequisiteScopeFingerprint: scope.prerequisiteScopeFingerprint }
       const file = requestFile(home, request.requestId)
       assertMigrationMetadataBound(request, 4 * 1024 * 1024)
@@ -167,32 +249,51 @@ export const createCaptureMigrationCoordinator = (paths: NodeClientPaths, enviro
       } finally { await rm(file, { force: true }) }
     },
     async authorize(proof: ValidatedCaptureMigration, outer: MigrationOuter, current: Scope, signal: AbortSignal): Promise<void> {
-      const validated = proofs.get(proof)
-      if (!validated || signal.aborted || !isDeepStrictEqual(validated.target, outer.target)) fail("conflict", "Capture migration proof does not authorize this target.")
+      await authorizeValidated(proof, outer, current, signal)
+    },
+    async saveTargetAuthorization(proof: ValidatedCaptureMigration, outer: MigrationOuter, job: TargetUpdateHandoff,
+      current: Scope, signal: AbortSignal): Promise<void> {
+      const request = proofs.get(proof), durable = await readTargetUpdateHandoff(home)
+      if (!request || signal.aborted || !durable || job.phase !== "activating" || targetUpdateRequestHash(durable) !== targetUpdateRequestHash(job) ||
+        !isDeepStrictEqual(request.target, outer.target) || !isDeepStrictEqual(request.bundle.packages, job.bundle.packages))
+        fail("conflict", "Target preflight does not authorize this durable handoff.")
       const canonical = await canonicalMigrationPaths(paths), inventory = await localInventory(canonical)
       const scope = await inspectCaptureMigrationPrerequisitesScope(canonical, current)
-      if (!isDeepStrictEqual(canonical, validated.paths) || !isDeepStrictEqual(inventory, validated.inventory) ||
-        scope.prerequisiteScopeFingerprint !== validated.prerequisiteScopeFingerprint) fail("conflict", "Capture migration scope or inventory changed after preflight.")
+      if (!isDeepStrictEqual(canonical, request.paths) || !isDeepStrictEqual(inventory, request.inventory) ||
+        scope.prerequisiteScopeFingerprint !== request.prerequisiteScopeFingerprint)
+        fail("conflict", "Target authorization scope changed before executable handoff.")
+      const intent = strict(TargetAuthorization, { protocol: "atape.target-capture-authorization.v1", jobId: job.id,
+        jobToken: job.token, jobHash: targetUpdateRequestHash(job), outerKey: outer.key, request })
+      assertMigrationMetadataBound(intent, 4 * 1024 * 1024)
       await withCaptureMigrationBarrier(home, async () => {
-        const control = createUpdateControl(home), boundary = await control.migrationBoundary(outer.key), prior = await readCaptureMigrationPair(home)
-        if (boundary.phase !== "prepared" || boundary.forwardOnly || !isDeepStrictEqual(boundary.target, outer.target)) fail("conflict", "Capture migration authorization requires its unfenced prepared runtime.")
-        await control.assertRuntimeAdmission(validated.source)
-        if (prior.known && (!prior.required || prior.ledger?.phase !== "completed" || !prior.ledger.receipt)) fail("conflict", "An earlier capture migration must recover first.")
-        const body = { outerKey: outer.key, home: canonical.atapeHome, paths: canonical, bundle: validated.bundle, bundleFingerprint: proof.bundleFingerprint,
-          source: validated.source, target: outer.target, inventory, prerequisiteScopeFingerprint: scope.prerequisiteScopeFingerprint }
-        const requirement: CaptureMigrationRequirement = { ...body, hash: requirementHash(body) }
-        const required: CaptureMigrationRequired = { protocol: "atape.capture-migration-required.v1", requirement,
-          ...(prior.ledger?.receipt ? { priorCompleted: { requirement: prior.ledger.required.requirement, receipt: prior.ledger.receipt } } : {}) }
-        // Reject before the first durable marker if any legitimate future phase
-        // could exceed the reader's bound. Progress and final receipts are finite
-        // and derivable from the admitted inventory, not unbounded child output.
-        const plannedReceipt = receiptFor(requirement), base = baseLedger(required), plannedAttempt = {
-          outerKey: outer.key, attemptId: randomUUID(), token: randomUUID(), bundleFingerprint: proof.bundleFingerprint, expiresAt: Number.MAX_SAFE_INTEGER }
-        for (const shape of [required, base, { ...base, phase: "applying", attempt: plannedAttempt, progress: plannedReceipt.accounts },
-          { ...base, phase: "completed", progress: plannedReceipt.accounts, receipt: plannedReceipt }]) assertMigrationMetadataBound(shape)
-        await writeCaptureMigrationRequired(home, required)
-        await writeCaptureMigrationLedger(home, baseLedger(required))
+        await createUpdateControl(home).assertRuntimeAdmission(request.source)
+        plannedAuthorization(plannedRequirement(request, outer, canonical), await readCaptureMigrationPair(home))
+        await atomicJSON(targetAuthorizationFile(home, job.id), intent)
       })
+    },
+    async pendingTargetAuthorization(job: TargetUpdateHandoff): Promise<MigrationOuter | undefined> {
+      const intent = await targetAuthorization(job)
+      return intent && { key: intent.outerKey, target: intent.request.target }
+    },
+    async consumeTargetAuthorization(job: TargetUpdateHandoff, signal: AbortSignal): Promise<MigrationOuter | undefined> {
+      const intent = await targetAuthorization(job)
+      if (!intent) return undefined
+      const outer = { key: intent.outerKey, target: intent.request.target }
+      const proof = Object.freeze({ bundleFingerprint: migrationBundleHash(intent.request.bundle), source: intent.request.source,
+        target: { version: intent.request.target.version, captureStateContract: intent.request.target.captureStateContract },
+        prerequisiteScopeFingerprint: intent.request.prerequisiteScopeFingerprint }) as ValidatedCaptureMigration
+      await authorizeValidated(proof, outer, { candidateConfig: intent.request.candidateConfig, wanted: intent.request.wanted }, signal, intent)
+      await removeTargetAuthorization(home, job.id)
+      return outer
+    },
+    async discardTargetAuthorization(job: TargetUpdateHandoff): Promise<void> {
+      const intent = await targetAuthorization(job)
+      if (!intent) return
+      const control = await readBoundedJSON(join(updateDirectory(home), "control.json")).catch(cause => {
+        if (missing(cause)) return undefined; throw cause
+      }) as { key?: unknown } | undefined
+      if (control?.key === intent.outerKey) fail("conflict", "A committed target authorization must recover forward.")
+      await removeTargetAuthorization(home, job.id)
     },
     async nextAttempt(outer: MigrationOuter): Promise<CaptureMigrationAttempt> {
       return withCaptureMigrationBarrier(home, async () => {
@@ -250,6 +351,7 @@ export const createCaptureMigrationCoordinator = (paths: NodeClientPaths, enviro
       return [pair.known.requirement.target, ...(pair.known.priorCompleted ? [pair.known.priorCompleted.requirement.target] : [])]
     }
   }
+  return coordinator
 }
 
 export const preflightCaptureMigrationEntry = (context: RuntimeContext, input: CaptureMigrationPrivateRequest) => Effect.gen(function*() {

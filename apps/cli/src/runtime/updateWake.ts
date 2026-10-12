@@ -10,7 +10,7 @@ import { needsUpdateRecovery } from "./managedUpdates.ts"
 import { makeNativeJobFiles } from "./nativeJobFiles.ts"
 import { executeOwnedProcess } from "./ownedProcess.ts"
 import { acquireProcessLock } from "./processLock.ts"
-import { readBoundedJSON, resolveRuntimeEntry, selectedBootstrap } from "./runtimeSelection.ts"
+import { readBoundedJSON, readEffectiveRuntimeSelection, resolveRuntimeEntry, selectedBootstrap } from "./runtimeSelection.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
 
 type UpdateWakeSystem = { readonly platform?: NodeJS.Platform; readonly homeDirectory?: string;
@@ -39,6 +39,9 @@ const Metadata = Schema.Struct({ protocol: Schema.Literal(protocol), enabled: Sc
   descriptors: Schema.Array(Schema.Struct({ file: Schema.String, hash: Schema.String, precedingHash: Schema.optionalKey(Schema.String) })),
   environment: Schema.Record(Schema.String, Schema.String), privateEnvironment: Schema.Record(Schema.String, Schema.String) })
 type Metadata = typeof Metadata.Type
+const RecoveryRuntimeManifest = Schema.Struct({ name: Schema.Literal("@atape/cli"),
+  version: Schema.String.check(Schema.isPattern(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/)),
+  atapeRuntime: Schema.Struct({ updateTargetProtocol: Schema.Literal("atape.update-target.v1"), updateWakeProtocol: Schema.Literal(protocol) }) })
 type Layout = { readonly home: string; readonly base: string; readonly directory: string; readonly metadata: string;
   readonly job: string; readonly files: readonly string[] }
 const directory = (home: string) => join(home, "updates", "wakeup")
@@ -283,6 +286,72 @@ export const admitUpdateWake = async (paths: NodeClientPaths, token: string, ent
     if (missing(cause)) return undefined
     if (cause instanceof UpdateWakeError) throw cause
     throw failure("state", "Could not validate ATape scheduled update state. Reopen ATape and inspect Settings.")
+  }
+}
+
+/** The caller already owns the update worker. Before future private state exists,
+ * refresh only an existing owned wake executable so its admission can route
+ * recovery through the stable target Interface. This does not enroll, start or
+ * inspect any OS job, change preferences, or replace the npm bootstrap. */
+export const prepareUpdateWakeRecoveryRuntime = async (paths: NodeClientPaths, bootstrap: string,
+  signal: AbortSignal): Promise<void> => {
+  try {
+    stopped(signal)
+    const home = await realpath(paths.atapeHome).catch(cause => { if (missing(cause)) return undefined; throw cause })
+    if (!home) return
+    const uid = process.getuid?.(), metadataFile = join(directory(home), "registration.json")
+    for (const path of [home, join(home, "updates"), directory(home)]) if (!await privateDirectoryPresent(path, uid)) return
+    if (await readPrivateFile(metadataFile, uid) === undefined) return
+    const release = await acquireProcessLock(join(directory(home), "registration.lock.sqlite"), 1_000)
+    if (!release) throw failure("state", "Another ATape process is updating scheduled registration. Retry shortly.")
+    try {
+      stopped(signal)
+      const saved = await readPrivateFile(metadataFile, uid)
+      if (saved === undefined) throw failure("identity", "The owned update wake registration disappeared before preparation.")
+      const previous = decodeMetadata(JSON.parse(saved), home), registeredPaths = defaultNodeClientPaths(previous.environment)
+      const original = await realpath(bootstrap)
+      if (previous.bootstrap !== original || Object.entries(paths).some(([key, value]) =>
+        registeredPaths[key as keyof NodeClientPaths] !== value))
+        throw failure("identity", "The update wake registration belongs to a different installation or state path.")
+      const contents = await Promise.all(previous.descriptors.map(item => readRegistration({
+        base: previous.platform === "darwin" ? previous.environment.HOME! : previous.environment.XDG_CONFIG_HOME!, file: item.file }, uid)))
+      assertDescriptors(previous, contents)
+      const preceding = (await readLauncher(previous, uid))!
+      const source = async () => {
+        const selected = await readEffectiveRuntimeSelection(home), entry = await realpath(await resolveRuntimeEntry(home, original))
+        const root = dirname(dirname(entry)), manifestFile = join(root, "package.json")
+        if (entry !== join(root, "dist", "atape.js") || await realpath(root) !== root || await realpath(manifestFile) !== manifestFile ||
+          selected !== undefined && selected.bootstrapEntry !== original)
+          throw failure("identity", "The selected recovery executable leaves its owned installation.")
+        let manifest: typeof RecoveryRuntimeManifest.Type
+        try { manifest = Schema.decodeUnknownSync(RecoveryRuntimeManifest)(JSON.parse(await readBundle(manifestFile, 256 * 1024))) }
+        catch { throw failure("identity", "The selected recovery executable does not implement target updates and scheduled wake admission.") }
+        if (selected !== undefined && manifest.version !== selected.version)
+          throw failure("identity", "The selected recovery executable does not implement target updates and scheduled wake admission.")
+        return { entry, bundle: await readBundle(entry) }
+      }
+      const current = await source(), hash = digest(current.bundle)
+      // The old copied bytes remain admitted if only the first synced metadata
+      // write succeeds. Retrying either interrupted state completes this exact
+      // source; it never grants future-state admission to unverified old bytes.
+      const { precedingLauncherHash: _, ...base } = previous
+      const next: Metadata = { ...base, launcherHash: hash }
+      const pending: Metadata = { ...next, ...(digest(preceding) !== hash ? { precedingLauncherHash: digest(preceding) } : {}) }
+      stopped(signal)
+      if (saved !== `${JSON.stringify(pending)}\n`) await writeOwned(metadataFile, `${JSON.stringify(pending)}\n`, uid)
+      stopped(signal)
+      if (preceding !== current.bundle) await writeOwned(previous.launcher, current.bundle, uid, maximumBundleBytes)
+      stopped(signal)
+      if (pending.precedingLauncherHash !== undefined) await writeOwned(metadataFile, `${JSON.stringify(next)}\n`, uid)
+      const confirmed = await readPrivateFile(metadataFile, uid)
+      if (confirmed === undefined || JSON.stringify(decodeMetadata(JSON.parse(confirmed), home)) !== JSON.stringify(next) ||
+        digest((await readLauncher(next, uid))!) !== hash || JSON.stringify(await source()) !== JSON.stringify(current))
+        throw failure("identity", "The owned update wake recovery executable was not confirmed.")
+      stopped(signal)
+    } finally { release() }
+  } catch (cause) {
+    if (cause instanceof UpdateWakeError) throw cause
+    throw failure("state", "Could not prepare the owned scheduled update recovery executable.")
   }
 }
 

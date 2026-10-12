@@ -7,8 +7,13 @@ import { dirname, join } from "node:path"
  * Interface; historical collect acceptance uses a separately frozen artifact. */
 export async function verifyClaudePackage(adapter, context, paths) {
   const { packageRoot, sourceHome, projectDirectory, temporaryRoot } = paths
+  const { releaseChannel } = JSON.parse(await readFile(new URL("../specs/auth-v1-release.json", import.meta.url), "utf8"))
+  assert.ok(["legacy-bridge", "target-owned"].includes(releaseChannel), "Installed Claude acceptance requires an explicit publication channel")
+  const bridge = releaseChannel === "legacy-bridge"
+  const canonicalProfile = bridge ? "atape.acp-centered.v4" : "atape.acp-centered.v5"
+  const sourceProfile = bridge ? "claude.jsonl.active-path.2" : "claude.jsonl.active-path.4"
   const limits = { rowBytes: 16 * 1024 * 1024, pageBytes: 32 * 1024 * 1024, pageRows: 100, records: 100_000, threads: 100, durationMs: 60_000 }
-  const projection = { events: 100_000, usage: 100_000, pageItems: 1, pageBytes: 32 * 1024 * 1024, canonicalProfiles: ["atape.acp-centered.v5"] }
+  const projection = { events: 100_000, usage: 100_000, pageItems: 1, pageBytes: 32 * 1024 * 1024, canonicalProfiles: [canonicalProfile] }
   const jsonl = rows => rows.map(row => JSON.stringify(row) + "\n").join("")
   const parse = source => source.trimEnd().split("\n").filter(Boolean).map(line => JSON.parse(line))
   const relocate = (source, cwd) => source.replaceAll(JSON.stringify(cwd).slice(1, -1), JSON.stringify(projectDirectory).slice(1, -1))
@@ -23,8 +28,8 @@ export async function verifyClaudePackage(adapter, context, paths) {
       const view = await runtime.sourceCapture.open(request)
       try {
         const header = JSON.parse(JSON.stringify(view)), frames = [], keys = new Set(), offsets = new Map()
-        assert.equal(header.canonicalProfileVersion, "atape.acp-centered.v5")
-        assert.equal(header.profile, "claude.jsonl.active-path.4")
+        assert.equal(header.canonicalProfileVersion, canonicalProfile)
+        assert.equal(header.profile, sourceProfile)
         assert.equal(header.origin.sourceId, sourceId); assert.equal(header.session.sourceSessionId, sourceId)
         assert.equal(typeof header.sourceCheckpoint, "string"); assert.ok(Buffer.byteLength(header.sourceCheckpoint) <= 1024 * 1024)
         assert.ok(Array.isArray(header.target.retainedThreadIds)); assert.ok(Array.isArray(header.sourceFailures))
@@ -103,8 +108,10 @@ export async function verifyClaudePackage(adapter, context, paths) {
     await writeFile(file, source)
     const actual = await capture(sourceId)
     const identities = actual.events.filter(event => event.update._meta).map(event => event.update._meta["atape.dev/tool-identity"])
-    assert.deepEqual(identities, [{ type: "mcp", server: "docs", name: "read_page" }, { type: "skill", name: "plugin:review" }, { type: "tool", name: "Read" }])
-    assert.deepEqual(actual.events.find(event => event.update.toolCallId === "file-call").update._meta["atape.dev/file-activity"],
+    assert.deepEqual(identities, [{ type: "mcp", server: "docs", name: "read_page" }, { type: "skill", name: "plugin:review" },
+      ...(bridge ? [] : [{ type: "tool", name: "Read" }])])
+    if (bridge) assert.ok(actual.events.every(event => !("atape.dev/file-activity" in (event.update._meta ?? {}))), "Bridge capture must retain actual released v4 output")
+    else assert.deepEqual(actual.events.find(event => event.update.toolCallId === "file-call").update._meta["atape.dev/file-activity"],
       [{ operation: "read", path: "/tmp/SKILL.md" }])
     assert.deepEqual(actual.events.filter(event => event.update.sessionUpdate === "tool_call_update").map(event => event.update.status), ["completed", "failed"])
     assert.equal(rawText(actual), source)
@@ -387,7 +394,7 @@ export async function verifyClaudePackage(adapter, context, paths) {
     }
   }
   process.env.ATAPE_CLAUDE_SESSION_FILE = ""; process.env.ATAPE_CLAUDE_HOME = sourceHome
-  process.stdout.write(`Verified installed Claude sourceCapture v2 with Canonical v5: ${roots + 3} native root snapshots, explicit native tool/MCP/Skill identities and old Host refusal, 9 rewind stages, ${scenarioCount} compaction scenarios, foreground/thinking families, direct background lifecycle and child-only append, child retention/removal, Raw off/backfill and 8 unlinked cases\n`)
+  process.stdout.write(`Verified installed Claude ${releaseChannel} sourceCapture v2 with ${canonicalProfile}/${sourceProfile}: ${roots + 3} native root snapshots, exact declared identities and file-fact coverage, old Host refusal, 9 rewind stages, ${scenarioCount} compaction scenarios, foreground/thinking families, direct background lifecycle and child-only append, child retention/removal, Raw off/backfill and 8 unlinked cases\n`)
 
   // Generated broad cycles prove one reducer, independently of native profile
   // counts. Bodies and bridge templates are controlled fixture data.
