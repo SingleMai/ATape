@@ -6,6 +6,10 @@ When Raw capture is enabled, unknown or newly introduced Codex records remain av
 
 For a local build or release tarball, use Tools and updates → Integration maintenance
 to install its directory or full archive path, then Choose tools to sync.
+The current stable-tool increment uses Canonical v5 and a v6 cursor. It has not
+been published or deployed: published 0.5.10 uses Canonical v3 and its projection-v5
+cursor. A supporting Server and complete CLI/Adapter bundle are required for
+the checkout revision; see [coordinated upgrades](../cli/setup-and-adapters.md#stable-native-tool-identity-checkout-increment).
 
 ## Supported source and limits
 
@@ -82,6 +86,26 @@ Completed Codex items map as follows:
 | `Extension` | `tool_call` with `other` kind |
 
 Private reasoning content is not promoted into Canonical. When Raw capture is enabled, it remains part of the separately uploaded Raw source, subject to the Collector Host's client-side secret redaction.
+
+## Stable native tool facts
+
+Current Canonical v5 capture records explicit native `function_call` and
+`custom_tool_call` names as ordinary tool identities. The closed native item
+types `CommandExecution`, `FileChange` and `ImageView` supply those stable names;
+their original command or display title remains separate. Native `McpToolCall`
+server/tool fields supply an MCP identity. Extension labels, shell text and
+missing or invalid names do not establish an identity. Derived child spawn
+markers likewise remain without an inferred native tool name.
+
+Names must be trimmed, well-formed Unicode and fit 500 UTF-8 bytes. Identity
+absence preserves the preceding fact on the same call; explicit null clears it.
+Explicit outcomes retain their existing meaning. The Adapter retains admitted
+original MCP `server`/`tool` fields so upload field rules can hide their copied
+identity and display values. The Host applies existing identity, copied-name and
+payload redaction before delivery; grouping rules belong to the Server's
+[Session Analytics Module](../session-analytics.md#stable-tool-grouping).
+See [ADR-0124](../architecture/adr/0124-stable-native-tool-identity.md).
+This increment adds no file-activity derivation or command-name guessing.
 
 ## Incremental and Raw behavior
 
@@ -170,15 +194,19 @@ observations; they never authorize source reads.
 
 ## Source clock quality and replay
 
-The current Codex paged runtime explicitly declares legacy Canonical v3. A new
-Host must acknowledge that capability; the genuine published 0.5.9 Host refuses
-the factory. Collection also requires affirmative Server support for nullable
-Canonical ingestion. This is a checkout capability and is not evidence that a
-new package version has been published. See
+The current Codex paged runtime explicitly declares
+`legacyCanonicalProfile: "atape.acp-centered.v5"`. Its factory requires explicit
+v5 Host support and defers source opening until collection. Collection requires
+affirmative Server Canonical v5 support before reading source bytes or advancing
+checkpoint/Raw progress. New CLI discovery explicitly opts into v5; default
+Server discovery retains v2/v3/v4 for published clients. The published 0.5.10
+Host/Server do not support this revision, which has not been published or
+deployed. See [v5 ingestion](../api/canonical-ingestion.md#v5-stable-native-tool-identity) and
 [the package contract](package-manifest.md#paged-observation-runtime-export).
 
-The first managed update from the genuine published 0.5.9 parent with active
-Codex collection and this new Adapter candidate is rejected during read-only
+The earlier nullable-clock transition from published 0.5.9 to 0.5.10 declared
+legacy Canonical v3. Its first managed update with active Codex collection
+was rejected during read-only
 preflight, before the Collector is paused. The older parent does not bind the
 new manifest capability into the same scope as the target. This applies even
 when both runtimes use the unchanged capture-state contract. Stop sync before
@@ -210,13 +238,18 @@ byte-offset coordinate. Append and discovery reordering preserve coordinates;
 removed files retain their ranks so later files cannot reuse them. Capacity
 exhaustion fails explicitly rather than folding distinct records together.
 
-Projection v5 replays supported older Canonical cursors once with stable Event
-IDs and a higher revision floor, including old active Canonical/Raw pages and
-completed progress. Saved Raw acknowledgements are retained. Later pages freeze
+Released projection v5 established source-clock correction and once-only replay
+of supported older Canonical cursors. Current projection v6 inherits that clock
+behavior and replays available older projections to add explicit tool identities
+with stable Event IDs and a higher revision floor, including old active
+Canonical/Raw pages and completed progress. Saved Raw acknowledgements are
+retained. Later pages freeze
 Session source recency and title at that revision. Unavailable source history
 cannot be repaired; previously accepted epochs are not guessed away by the
 Server. Keep checkpoints and use the updated Adapter for forward recovery;
-older Adapters cannot read its projection-v5 cursor.
+older Adapters, including published 0.5.10, cannot read the new v6 cursor. The
+earlier projection-v5 cursor refusal remains part of the 0.5.9-to-0.5.10 clock
+transition evidence; it does not establish v6 rollback compatibility.
 
 First projection of a changed snapshot makes an additional bounded record scan
 to compute source recency after final ownership/format selection. Continuations
@@ -226,7 +259,8 @@ Canonical profile. Existing uncertain-delivery and redaction-policy constraints
 continue to apply. [ADR-0122](../architecture/adr/0122-explicit-legacy-source-clocks.md)
 records the choice and alternatives.
 
-Projection v5 retains v4's cumulative item repair described in
+Current projection v6 retains projection v5's clock correction and v4's
+cumulative item repair described in
 [ADR-0055](../architecture/adr/0055-codex-item-update-revisions.md) and preserves
 unknown tool outcomes. A missing or unrecognized provider status is omitted;
 it does not mean success or failure. Explicit provider outcomes and numeric

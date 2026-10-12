@@ -150,6 +150,21 @@ describe("Redaction Module", () => {
     expect(result.observation.events[0]!.update).toMatchObject({ title: "[REDACTED]", _meta: { [ToolIdentityMetaKey]: null } })
     expect(JSON.stringify(result.observation)).not.toContain("private-native-tool")
   })
+  it.each(["private-tool-" + "x".repeat(487), "私".repeat(166)])(
+    "masks bounded titles retaining only a hidden name prefix (%#)", async name => {
+      const policy = await compile([{ name: "tool source", type: "local", field_pattern: "^tool$" }])
+      let bounded = ""
+      for (const character of `docs/${name}`) {
+        if (new TextEncoder().encode(bounded + character).byteLength > 500) break
+        bounded += character
+      }
+      const initial = identityObservation({ type: "mcp", server: "docs", name }), event = initial.events[0]!
+      const input = { ...initial, events: [{ ...event, update: { ...event.update, title: bounded,
+        rawInput: { server: "docs", tool: name } } }] }
+      const result = await Effect.runPromise(prepareCanonicalSlice("fixture", input, CanonicalProfileVersion5)
+        .pipe(Effect.provide(makeRedactionLayer(policy))))
+      expect(result.observation.events[0]!.update).toMatchObject({ title: "[REDACTED]", _meta: { [ToolIdentityMetaKey]: null } })
+    })
   it("retains a public name title when only the identity category is masked", async () => {
     const policy = await compile([{ name: "identity category", type: "local", field_pattern: "^type$" }])
     const initial = identityObservation({ type: "tool", name: "exec_command" }), event = initial.events[0]!

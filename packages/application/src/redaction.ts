@@ -283,8 +283,20 @@ const canonical = (observation: AdapterObservation, engine: Engine, output: Repo
     const hiddenNames = copiedNames.filter(name =>
       metadataHidesName(name) || input?.changed && maskedIdentitySource(value.rawInput, input.value, new Set([name])) ||
       outputValue?.changed && maskedIdentitySource(value.rawOutput, outputValue.value, new Set([name])))
-    const maskedTitle = (value: string) => title(hiddenNames.sort((a, b) => b.length - a.length)
-      .reduce((current, name) => current.replaceAll(name, "[REDACTED]"), value))
+    const maskedTitle = (value: string) => {
+      // Native titles are capped at 500 UTF-8 bytes. A boundary may retain only
+      // a prefix of a hidden copied name; replacing the complete name cannot
+      // protect that copy. Fail closed for a possible truncated suffix.
+      if (byteLength(value) >= 497 && hiddenNames.some(name => {
+        for (let start = 0; start < value.length; start++) {
+          const suffix = value.slice(start)
+          if (suffix.length < name.length && name.startsWith(suffix)) return true
+        }
+        return false
+      })) return "[REDACTED]"
+      return title(hiddenNames.sort((a, b) => b.length - a.length)
+        .reduce((current, name) => current.replaceAll(name, "[REDACTED]"), value))
+    }
     const metadata = () => {
       const masked = maskedMetadata
       if (unsafeMetadata || masked === undefined) return { [ToolIdentityMetaKey]: null }
