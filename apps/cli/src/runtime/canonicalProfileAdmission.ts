@@ -1,5 +1,5 @@
 import { CollectionTransportError } from "@atape/application"
-import { CanonicalCapabilities, CanonicalProfileVersion3, PublicationCapabilities, PublicationTargetProfile3 } from "@atape/domain"
+import { CanonicalCapabilities, CanonicalProfileVersion3, CanonicalProfileVersion5, PublicationCapabilities, PublicationTargetProfile3, PublicationTargetProfile5 } from "@atape/domain"
 import { Effect, Schema } from "effect"
 import { type AuthenticatedHTTPClient, type AuthenticatedHTTPError, type AuthenticatedHTTPResponse } from "./authenticatedHTTPClient.ts"
 
@@ -8,17 +8,19 @@ import { type AuthenticatedHTTPClient, type AuthenticatedHTTPError, type Authent
  * the direct capability route explicitly does not exist or is unimplemented. */
 export const ensureCanonicalProfile = (
   http: AuthenticatedHTTPClient["Service"], binding: { readonly instanceOrigin: string; readonly userId: string },
-  profile: typeof CanonicalProfileVersion3
+  profile: typeof CanonicalProfileVersion3 | typeof CanonicalProfileVersion5
 ): Effect.Effect<void, AuthenticatedHTTPError | CollectionTransportError> => Effect.gen(function*() {
+  const targetProfile = profile === CanonicalProfileVersion5 ? PublicationTargetProfile5 : PublicationTargetProfile3
   const request = { instanceOrigin: binding.instanceOrigin, expectedUserId: binding.userId, method: "GET" as const }
-  const response = yield* http.request({ ...request, path: "/api/v1/ingestion/canonical/capabilities" })
+  const response = yield* http.request({ ...request, path: "/api/v1/ingestion/canonical/capabilities",
+    ...(profile === CanonicalProfileVersion5 ? { acceptCanonicalProfile: CanonicalProfileVersion5 } : {}) })
   if (response.status === 404 || response.status === 405 || response.status === 501) {
     const fallback = yield* http.request({ ...request, path: "/api/v1/publications/capabilities",
-      acceptPublicationTarget: PublicationTargetProfile3 })
+      acceptPublicationTarget: targetProfile })
     if (fallback.status !== 200) return yield* statusFailure(fallback, profile)
     const capabilities = yield* Schema.decodeUnknownEffect(PublicationCapabilities)(fallback.body).pipe(
       Effect.mapError(() => invalidCapabilities()))
-    if (!capabilities.targetProfiles?.includes(PublicationTargetProfile3)) return yield* unsupportedProfile(profile)
+    if (!capabilities.targetProfiles?.includes(targetProfile)) return yield* unsupportedProfile(profile)
     return
   }
   if (response.status !== 200) return yield* statusFailure(response, profile)
@@ -27,7 +29,7 @@ export const ensureCanonicalProfile = (
   if (!capabilities.canonicalProfiles.includes(profile)) return yield* unsupportedProfile(profile)
 })
 
-const unsupportedProfile = (profile: typeof CanonicalProfileVersion3) => new CollectionTransportError({
+const unsupportedProfile = (profile: typeof CanonicalProfileVersion3 | typeof CanonicalProfileVersion5) => new CollectionTransportError({
   reason: "rejected", operation: "canonical", retryable: false,
   message: `ATape did not affirm support for ${profile}; update the Server before collecting this Adapter.`
 })
@@ -35,7 +37,7 @@ const invalidCapabilities = () => new CollectionTransportError({
   reason: "invalid_response", operation: "canonical", retryable: false,
   message: "ATape returned invalid Canonical profile capabilities."
 })
-const statusFailure = (response: AuthenticatedHTTPResponse, profile: typeof CanonicalProfileVersion3) =>
+const statusFailure = (response: AuthenticatedHTTPResponse, profile: typeof CanonicalProfileVersion3 | typeof CanonicalProfileVersion5) =>
   new CollectionTransportError({ operation: "canonical", status: response.status,
     reason: response.status === 401 || response.status === 403 ? "unauthenticated" : "rejected",
     retryable: response.status === 429 || response.status >= 500,

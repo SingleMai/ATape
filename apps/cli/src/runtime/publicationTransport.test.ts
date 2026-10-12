@@ -1,5 +1,5 @@
 import { PublicationTransport } from "@atape/application"
-import { PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfiles34, type PublicationBinding } from "@atape/domain"
+import { PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfile5, PublicationTargetProfiles345, type PublicationBinding } from "@atape/domain"
 import { Effect, Layer, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { AuthenticatedHTTPClient, type AuthenticatedHTTPRequest } from "./authenticatedHTTPClient.ts"
@@ -34,13 +34,13 @@ const fixture = (body: unknown) => {
 }
 
 describe("publication capability negotiation", () => {
-  it("explicitly accepts v3 and v4 while retaining the authenticated binding", async () => {
-    const body = { ...legacyCapabilities, targetProfiles: [...legacyCapabilities.targetProfiles, PublicationTargetProfile3, PublicationTargetProfile4] }
+  it("explicitly accepts v3, v4 and v5 while retaining the authenticated binding", async () => {
+    const body = { ...legacyCapabilities, targetProfiles: [...legacyCapabilities.targetProfiles, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfile5] }
     const client = fixture(body)
     expect(await client.capabilities()).toEqual(body)
     expect(client.requests).toEqual([{
       instanceOrigin: binding.instanceOrigin, expectedUserId: binding.userId, method: "GET",
-      path: "/api/v1/publications/capabilities", acceptPublicationTarget: PublicationTargetProfiles34
+      path: "/api/v1/publications/capabilities", acceptPublicationTarget: PublicationTargetProfiles345
     }])
   })
 

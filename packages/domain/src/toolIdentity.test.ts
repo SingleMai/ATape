@@ -5,7 +5,7 @@ import { AcpToolMetadata, AcpToolUpdate, ToolIdentityMetaKey } from "./collector
 describe("admitted ACP tool identity", () => {
   const decode = Schema.decodeUnknownSync(AcpToolUpdate)
   it.each([
-    { type: "mcp", server: "service", name: "read" }, { type: "skill", name: "review" }, null
+    { type: "tool", name: "exec_command" }, { type: "mcp", server: "service", name: "read" }, { type: "skill", name: "review" }, null
   ])("retains the exact normalized identity %j", identity => {
     const update = { sessionUpdate: "tool_call", toolCallId: "call", title: "Call",
       _meta: { [ToolIdentityMetaKey]: identity } }
@@ -20,7 +20,9 @@ describe("admitted ACP tool identity", () => {
   })
 
   it.each([
-    null, {}, { other: null }, { [ToolIdentityMetaKey]: null, extra: true },
+    null, {}, { other: null },
+    { [ToolIdentityMetaKey]: { type: "tool", name: "exec_command", server: "extra" } },
+    { [ToolIdentityMetaKey]: { type: "tool", name: "x".repeat(501) } }, { [ToolIdentityMetaKey]: null, extra: true },
     { [ToolIdentityMetaKey]: { type: "mcp", server: "service", name: "tool", extra: true } },
     { [ToolIdentityMetaKey]: { type: "skill", name: "review", server: "not-a-skill-field" } },
     { [ToolIdentityMetaKey]: { type: "mcp", name: "tool" } },

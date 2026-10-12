@@ -250,14 +250,17 @@ func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.
 		}
 		if input.ToolUpdateJSON != "" {
 			if batch.CanonicalProfileVersion == LegacyCanonicalProfileVersion {
-				return canonical.WriteBatch{}, invalid(field+".toolUpdateJson", "requires the v2, v3 or v4 profile")
+				return canonical.WriteBatch{}, invalid(field+".toolUpdateJson", "requires the v2, v3, v4 or v5 profile")
 			}
 			tool, err := canonical.ParseToolUpdate(input.ToolUpdateJSON)
 			if err != nil {
 				return canonical.WriteBatch{}, invalid(field+".toolUpdateJson", "is not a bounded ACP tool update")
 			}
-			if tool.Meta != nil && batch.CanonicalProfileVersion != ToolIdentityCanonicalProfileVersion {
-				return canonical.WriteBatch{}, invalid(field+".toolUpdateJson", "tool identity requires the v4 profile")
+			if tool.Meta != nil && batch.CanonicalProfileVersion != ToolIdentityCanonicalProfileVersion && batch.CanonicalProfileVersion != StableToolCanonicalProfileVersion {
+				return canonical.WriteBatch{}, invalid(field+".toolUpdateJson", "tool identity requires the v4 or v5 profile")
+			}
+			if tool.Meta != nil && tool.Meta.Identity != nil && tool.Meta.Identity.Type == "tool" && batch.CanonicalProfileVersion != StableToolCanonicalProfileVersion {
+				return canonical.WriteBatch{}, invalid(field+".toolUpdateJson", "ordinary tool identity requires the v5 profile")
 			}
 			kind, text, label := tool.Summary()
 			if input.Kind != kind && !(input.Kind == "spawn" && input.ChildSourceThreadID != nil) {

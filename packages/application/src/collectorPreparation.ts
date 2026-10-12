@@ -1,6 +1,6 @@
 import type { AcpContentBlock, AcpSessionUpdate, AdapterCollectionPage, CanonicalProfile } from "@atape/domain"
 import { AdapterObservation, AdapterCollectionLimits, AdapterProtocolVersion, AdapterSourceFailure,
-  MaxSourceFailures, isBoundedToolValue, ToolUpdateBytes, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4 } from "@atape/domain"
+  MaxSourceFailures, isBoundedToolValue, ToolUpdateBytes, CanonicalProfileVersion, hasNullableSourceClocks, admitsToolMetadata } from "@atape/domain"
 import { Effect, Layer, Schema } from "effect"
 import { CollectionContractError, SecretRedactor } from "./collectorContracts.ts"
 import { legacySecretRedactor, prepareCanonicalRedaction } from "./redaction.ts"
@@ -176,7 +176,7 @@ const validTimestamp = (value: string) => {
   return !Number.isNaN(millis) && (millis !== zeroTimestampMillis || /[1-9]/.test((match[1] ?? "").slice(0, 6)))
 }
 const validSourceTimestamp = (value: string | null, profile: CanonicalProfile) =>
-  value === null ? profile === CanonicalProfileVersion3 || profile === CanonicalProfileVersion4 : validTimestamp(value)
+  value === null ? hasNullableSourceClocks(profile) : validTimestamp(value)
 const boundedIdentity = (value: string, max: number) => value.trim() !== "" && utf8Bytes(value) <= max
 const boundedText = (value: string, max: number, empty: boolean) =>
   (empty || value.trim() !== "") && utf8Bytes(value) <= max
@@ -205,10 +205,10 @@ const validAcpUpdate = (update: AcpSessionUpdate, profile: CanonicalProfile = Ca
       return (update.messageId === undefined || update.messageId === null || boundedIdentity(update.messageId, 500)) &&
         validAcpContentBlock(update.content)
     case "tool_call":
-      return (profile === CanonicalProfileVersion4 || !Object.hasOwn(update, "_meta")) &&
+      return admitsToolMetadata(profile, update) &&
         validToolValues(update) && boundedIdentity(update.toolCallId, 500) && boundedText(update.title, 500, false)
     case "tool_call_update":
-      return (profile === CanonicalProfileVersion4 || !Object.hasOwn(update, "_meta")) && validToolValues(update) && boundedIdentity(update.toolCallId, 500) &&
+      return admitsToolMetadata(profile, update) && validToolValues(update) && boundedIdentity(update.toolCallId, 500) &&
         (update.title === undefined || update.title === null || boundedText(update.title, 500, true))
   }
 }

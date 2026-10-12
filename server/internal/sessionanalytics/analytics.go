@@ -24,14 +24,15 @@ import (
 )
 
 const (
-	Version                = 2
-	ActivityVersion        = 3
-	MaxFacts               = canonical.AnalyticsRecordLimit
-	MaxThreads             = canonical.AnalyticsThreadLimit
-	MaxTools               = 2000
-	MaxModels              = 1000
-	MaxResponseBytes       = 2 << 20
-	maxSafeInteger   int64 = 9007199254740991
+	Version                 = 2
+	ActivityVersion         = 3
+	StableToolVersion       = 4
+	MaxFacts                = canonical.AnalyticsRecordLimit
+	MaxThreads              = canonical.AnalyticsThreadLimit
+	MaxTools                = 2000
+	MaxModels               = 1000
+	MaxResponseBytes        = 2 << 20
+	maxSafeInteger    int64 = 9007199254740991
 )
 
 var ErrCapacity = errors.New("session analysis exceeds supported capacity")
@@ -70,25 +71,43 @@ type Tokens struct {
 	IncompleteSamples int    `json:"incompleteSamples"`
 }
 type Summary struct {
-	RootUserInputs     int `json:"rootUserInputs"`
-	MessageFragments   int `json:"messageFragments"`
-	ThoughtFragments   int `json:"thoughtFragments"`
-	ToolCalls          int `json:"toolCalls"`
-	ChildThreads       int `json:"childThreads"`
-	KnownTimeEvents    int `json:"knownTimeEvents"`
-	UnknownTimeEvents  int `json:"unknownTimeEvents"`
-	UnlinkedToolEvents int `json:"unlinkedToolEvents"`
+	RootUserInputs        int  `json:"rootUserInputs"`
+	MessageFragments      int  `json:"messageFragments"`
+	ThoughtFragments      int  `json:"thoughtFragments"`
+	ToolCalls             int  `json:"toolCalls"`
+	ChildThreads          int  `json:"childThreads"`
+	KnownTimeEvents       int  `json:"knownTimeEvents"`
+	UnknownTimeEvents     int  `json:"unknownTimeEvents"`
+	UnlinkedToolEvents    int  `json:"unlinkedToolEvents"`
+	IdentifiedToolCalls   *int `json:"identifiedToolCalls,omitempty"`
+	UnidentifiedToolCalls *int `json:"unidentifiedToolCalls,omitempty"`
 }
 type Tool struct {
-	Name       string `json:"name"`
-	Kind       string `json:"kind"`
-	Calls      int    `json:"calls"`
-	Completed  int    `json:"completed"`
-	Failed     int    `json:"failed"`
-	Pending    int    `json:"pending"`
-	InProgress int    `json:"inProgress"`
-	Unknown    int    `json:"unknown"`
+	Key        string                  `json:"key,omitempty"`
+	Identity   *canonical.ToolIdentity `json:"identity,omitempty"`
+	Name       string                  `json:"name"`
+	Kind       string                  `json:"kind"`
+	Calls      int                     `json:"calls"`
+	Completed  int                     `json:"completed"`
+	Failed     int                     `json:"failed"`
+	Pending    int                     `json:"pending"`
+	InProgress int                     `json:"inProgress"`
+	Unknown    int                     `json:"unknown"`
 }
+
+// Only the opt-in representation adds identity, including an explicit null.
+// Older representations retain their exact shape and label-filter contract.
+func (t Tool) MarshalJSON() ([]byte, error) {
+	type plain Tool
+	if t.Key == "" {
+		return json.Marshal(plain(t))
+	}
+	return json.Marshal(struct {
+		plain
+		Identity *canonical.ToolIdentity `json:"identity"`
+	}{plain(t), t.Identity})
+}
+
 type MCPTool struct {
 	Server     string `json:"server"`
 	Name       string `json:"name"`
@@ -224,8 +243,8 @@ type pageCursor struct {
 
 func binding(sessionID string, q Query) string {
 	encoded, _ := json.Marshal([]any{Version, sessionID, q.Snapshot, q.Metric, q.Thread, q.Tool, q.Capability, q.Server})
-	if q.AnalyticsVersion == ActivityVersion {
-		encoded, _ = json.Marshal([]any{ActivityVersion, sessionID, q.Snapshot, q.Metric, q.Thread, q.Tool, q.Capability, q.Server, q.Range})
+	if q.AnalyticsVersion >= ActivityVersion {
+		encoded, _ = json.Marshal([]any{q.AnalyticsVersion, sessionID, q.Snapshot, q.Metric, q.Thread, q.Tool, q.Capability, q.Server, q.Range})
 	}
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
@@ -234,7 +253,7 @@ func validateQuery(sessionID string, q Query) (Query, int, error) {
 	if q.AnalyticsVersion == 0 {
 		q.AnalyticsVersion = Version
 	}
-	if q.AnalyticsVersion != Version && q.AnalyticsVersion != ActivityVersion {
+	if q.AnalyticsVersion != Version && q.AnalyticsVersion != ActivityVersion && q.AnalyticsVersion != StableToolVersion {
 		return q, 0, &InvalidQueryError{"analyticsVersion", "is not supported"}
 	}
 	for field, value := range map[string]string{"sessionId": sessionID, "snapshot": q.Snapshot, "thread": q.Thread, "tool": q.Tool, "capability": q.Capability, "server": q.Server, "range": q.Range} {
@@ -258,14 +277,14 @@ func validateQuery(sessionID string, q Query) (Query, int, error) {
 	switch q.Metric {
 	case "tools", "failed_tools", "unknown_tools", "user_inputs", "thoughts", "threads", "mcp_tools", "skills":
 	case "records":
-		if q.AnalyticsVersion != ActivityVersion {
-			return q, 0, &InvalidQueryError{"metric", "records requires analytics version 3"}
+		if q.AnalyticsVersion < ActivityVersion {
+			return q, 0, &InvalidQueryError{"metric", "records requires analytics version 3 or 4"}
 		}
 	default:
 		return q, 0, &InvalidQueryError{"metric", "is not supported"}
 	}
-	if q.Range != "" && (q.AnalyticsVersion != ActivityVersion || q.Metric != "records" || q.Snapshot == "") {
-		return q, 0, &InvalidQueryError{"range", "requires version 3 records and snapshot"}
+	if q.Range != "" && (q.AnalyticsVersion < ActivityVersion || q.Metric != "records" || q.Snapshot == "") {
+		return q, 0, &InvalidQueryError{"range", "requires version 3 or 4 records and snapshot"}
 	}
 	if q.Tool != "" && q.Metric != "tools" && q.Metric != "failed_tools" && q.Metric != "unknown_tools" {
 		return q, 0, &InvalidQueryError{"tool", "only applies to tool metrics"}
@@ -334,6 +353,9 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 	}
 	r := Result{Snapshot: s.SnapshotToken, Head: s.Head, AnalyticsVersion: q.AnalyticsVersion, SessionID: s.Session.ID, CaptureStatus: s.Session.CaptureStatus,
 		Tools: []Tool{}, Capabilities: Capabilities{MCP: []MCPTool{}, Skills: []Skill{}}, Threads: []Thread{}, Usage: Usage{Models: []ModelUsage{}}, Evidence: Evidence{Items: []EvidenceItem{}}}
+	if q.AnalyticsVersion == StableToolVersion {
+		r.Summary.IdentifiedToolCalls, r.Summary.UnidentifiedToolCalls = new(int), new(int)
+	}
 	threads := make(map[string]*Thread, len(s.Threads))
 	threadTokens := make(map[string]*tokenSum, len(s.Threads))
 	for _, source := range s.Threads {
@@ -467,26 +489,40 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 	skillGroups := make(map[string]*Skill)
 	capabilityNames, serverNames := make(map[string]bool), make(map[string]bool)
 	for key, call := range calls {
-		groupKey := [2]string{call.name, call.kind}
+		name, selector := call.name, call.name
+		if q.AnalyticsVersion == StableToolVersion {
+			name, selector = stableToolName(call.identity), stableToolKey(call.identity, call.kind)
+			if call.identity == nil {
+				*r.Summary.UnidentifiedToolCalls++
+			} else {
+				*r.Summary.IdentifiedToolCalls++
+			}
+		}
+		groupKey := [2]string{selector, call.kind}
 		group := groups[groupKey]
 		if group == nil {
 			if len(groups) >= MaxTools {
 				return Result{}, ErrCapacity
 			}
-			group = &Tool{Name: call.name, Kind: call.kind}
+			group = &Tool{Name: name, Kind: call.kind}
+			if q.AnalyticsVersion == StableToolVersion {
+				group.Key, group.Identity = selector, call.identity
+			}
 			groups[groupKey] = group
 		}
-		toolNames[call.name] = true
+		toolNames[selector] = true
 		group.Calls++
 		r.Summary.ToolCalls++
 		threads[key.thread].ToolCalls++
 		incrementOutcome(call.status, &group.Completed, &group.Failed, &group.Pending, &group.InProgress, &group.Unknown)
 		matches := q.Metric == "tools" || q.Metric == "failed_tools" && call.status == "failed" || q.Metric == "unknown_tools" && call.status == ""
-		if matches && (q.Tool == "" || q.Tool == call.name) {
+		if matches && (q.Tool == "" || q.Tool == selector) {
+			// A group selects stable identity; its original-Event evidence keeps
+			// the call's last display title, including unidentified calls.
 			candidates[call.event.ID] = evidence(call.event, call.name)
 		}
 		identity := call.identity
-		if identity == nil {
+		if identity == nil || identity.Type == "tool" {
 			r.Capabilities.UnclassifiedCalls++
 			continue
 		}
@@ -574,7 +610,10 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 		if a.Name != b.Name {
 			return a.Name < b.Name
 		}
-		return a.Kind < b.Kind
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		return a.Key < b.Key
 	})
 	if q.Metric == "threads" {
 		for id, event := range firstThreadEvent {
@@ -618,7 +657,7 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 	}
 	sort.Slice(r.Threads, func(i, j int) bool { return r.Threads[i].ID < r.Threads[j].ID })
 	var activity *activitySelection
-	if q.AnalyticsVersion == ActivityVersion {
+	if q.AnalyticsVersion >= ActivityVersion {
 		var err error
 		activity, err = deriveActivity(ctx, s, events, calls, q)
 		if err != nil {
@@ -635,7 +674,7 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 		if activity != nil && !activity.matches(event) {
 			continue
 		}
-		if q.AnalyticsVersion == ActivityVersion {
+		if q.AnalyticsVersion >= ActivityVersion {
 			item.ClockQuality = clockQuality(event)
 		}
 		if matched >= offset && len(r.Evidence.Items) < q.Limit {
@@ -653,6 +692,22 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 		return Result{}, &InvalidQueryError{"cursor", "is beyond the matching evidence"}
 	}
 	return r, nil
+}
+
+func stableToolName(identity *canonical.ToolIdentity) string {
+	if identity == nil {
+		return "unknown"
+	}
+	if identity.Type == "mcp" {
+		return identity.Server + "/" + identity.Name
+	}
+	return identity.Name
+}
+
+func stableToolKey(identity *canonical.ToolIdentity, kind string) string {
+	encoded, _ := json.Marshal([]any{"tool-group.v1", identity, kind})
+	sum := sha256.Sum256(encoded)
+	return "tool:" + hex.EncodeToString(sum[:])
 }
 
 func evidence(e canonical.EventRecord, label string) EvidenceItem {

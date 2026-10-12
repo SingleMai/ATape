@@ -130,7 +130,8 @@ try {
   assert.equal(collected.failures.length, 0)
   assert.ok(remote.requests.some(request => request.method === "GET" &&
     request.url === "/api/v1/ingestion/canonical/capabilities" &&
-    request.authorization === "Bearer atc_v1_release-secret"), "Codex did not affirm its nullable profile")
+    request.authorization === "Bearer atc_v1_release-secret" &&
+    request.acceptCanonicalProfile === "atape.acp-centered.v5"), "Codex did not explicitly negotiate its stable tool profile")
   assert.deepEqual(collected.jobs.map((job) => ({
     projectId: job.projectId,
     adapterId: job.adapterId,

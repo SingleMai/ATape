@@ -8,7 +8,7 @@ import { dirname, join } from "node:path"
 export async function verifyClaudePackage(adapter, context, paths) {
   const { packageRoot, sourceHome, projectDirectory, temporaryRoot } = paths
   const limits = { rowBytes: 16 * 1024 * 1024, pageBytes: 32 * 1024 * 1024, pageRows: 100, records: 100_000, threads: 100, durationMs: 60_000 }
-  const projection = { events: 100_000, usage: 100_000, pageItems: 1, pageBytes: 32 * 1024 * 1024, canonicalProfiles: ["atape.acp-centered.v4"] }
+  const projection = { events: 100_000, usage: 100_000, pageItems: 1, pageBytes: 32 * 1024 * 1024, canonicalProfiles: ["atape.acp-centered.v5"] }
   const jsonl = rows => rows.map(row => JSON.stringify(row) + "\n").join("")
   const parse = source => source.trimEnd().split("\n").filter(Boolean).map(line => JSON.parse(line))
   const relocate = (source, cwd) => source.replaceAll(JSON.stringify(cwd).slice(1, -1), JSON.stringify(projectDirectory).slice(1, -1))
@@ -23,7 +23,8 @@ export async function verifyClaudePackage(adapter, context, paths) {
       const view = await runtime.sourceCapture.open(request)
       try {
         const header = JSON.parse(JSON.stringify(view)), frames = [], keys = new Set(), offsets = new Map()
-        assert.equal(header.canonicalProfileVersion, "atape.acp-centered.v4")
+        assert.equal(header.canonicalProfileVersion, "atape.acp-centered.v5")
+        assert.equal(header.profile, "claude.jsonl.active-path.3")
         assert.equal(header.origin.sourceId, sourceId); assert.equal(header.session.sourceSessionId, sourceId)
         assert.equal(typeof header.sourceCheckpoint, "string"); assert.ok(Buffer.byteLength(header.sourceCheckpoint) <= 1024 * 1024)
         assert.ok(Array.isArray(header.target.retainedThreadIds)); assert.ok(Array.isArray(header.sourceFailures))
@@ -102,7 +103,7 @@ export async function verifyClaudePackage(adapter, context, paths) {
     await writeFile(file, source)
     const actual = await capture(sourceId)
     const identities = actual.events.filter(event => event.update._meta).map(event => event.update._meta["atape.dev/tool-identity"])
-    assert.deepEqual(identities, [{ type: "mcp", server: "docs", name: "read_page" }, { type: "skill", name: "plugin:review" }])
+    assert.deepEqual(identities, [{ type: "mcp", server: "docs", name: "read_page" }, { type: "skill", name: "plugin:review" }, { type: "tool", name: "Read" }])
     assert.deepEqual(actual.events.filter(event => event.update.sessionUpdate === "tool_call_update").map(event => event.update.status), ["completed", "failed"])
     assert.equal(rawText(actual), source)
     unchanged(actual, await capture(sourceId, { rawEnabled: false }))
@@ -384,7 +385,7 @@ export async function verifyClaudePackage(adapter, context, paths) {
     }
   }
   process.env.ATAPE_CLAUDE_SESSION_FILE = ""; process.env.ATAPE_CLAUDE_HOME = sourceHome
-  process.stdout.write(`Verified installed Claude sourceCapture v2 with Canonical v4: ${roots + 3} native root snapshots, explicit MCP/Skill identities and old Host refusal, 9 rewind stages, ${scenarioCount} compaction scenarios, foreground/thinking families, direct background lifecycle and child-only append, child retention/removal, Raw off/backfill and 8 unlinked cases\n`)
+  process.stdout.write(`Verified installed Claude sourceCapture v2 with Canonical v5: ${roots + 3} native root snapshots, explicit native tool/MCP/Skill identities and old Host refusal, 9 rewind stages, ${scenarioCount} compaction scenarios, foreground/thinking families, direct background lifecycle and child-only append, child retention/removal, Raw off/backfill and 8 unlinked cases\n`)
 
   // Generated broad cycles prove one reducer, independently of native profile
   // counts. Bodies and bridge templates are controlled fixture data.

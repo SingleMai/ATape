@@ -48,7 +48,11 @@ func TestActivityAcceptOptsInWithoutChangingDefaultJSON(t *testing.T) {
 		{"", 2, 200}, {"application/json", 2, 200}, {activityAccept, 3, 200},
 		{"application/vnd.atape.session-analytics.v3+json;q=0, application/json", 2, 200},
 		{"application/vnd.atape.session-analytics.v3+json;q=0.001, application/json", 3, 200},
-		{"text/html", 2, 200}, {"application/vnd.atape.session-analytics.v4+json", 2, 200},
+		{"text/html", 2, 200}, {"application/vnd.atape.session-analytics.v4+json", 4, 200},
+		{"application/vnd.atape.session-analytics.v4+json, " + activityAccept, 4, 200},
+		{"application/vnd.atape.session-analytics.v4+json;q=0, " + activityAccept, 3, 200},
+		{"application/vnd.atape.session-analytics.v4+json;q=bad", 0, 400},
+		{"application/vnd.atape.session-analytics.v5+json", 2, 200},
 		{"application/vnd.atape.session-analytics.v3+json;q=broken", 0, 400},
 		{"application/vnd.atape.session-analytics.v3+json;q=NaN", 0, 400},
 		{"application/vnd.atape.session-analytics.v3+json;q=1.1", 0, 400},
@@ -71,7 +75,7 @@ func TestActivityAcceptOptsInWithoutChangingDefaultJSON(t *testing.T) {
 			}
 			var body sessionanalytics.Result
 			decodeResponse(t, res, &body)
-			if body.AnalyticsVersion != test.version || (body.Activity != nil) != (test.version == 3) || res.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+			if body.AnalyticsVersion != test.version || (body.Activity != nil) != (test.version >= 3) || res.Header().Get("Content-Type") != "application/json; charset=utf-8" {
 				t.Fatalf("wire: %+v", body)
 			}
 			if test.version == 2 && (strings.Contains(res.Body.String(), "activity") || strings.Contains(res.Body.String(), "clockQuality")) {

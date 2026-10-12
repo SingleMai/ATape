@@ -8,6 +8,7 @@ const CanonicalProfileVersion = "atape.acp-centered.v2"
 const LegacyCanonicalProfileVersion = "atape.acp-centered.v1"
 const UnknownTimeCanonicalProfileVersion = "atape.acp-centered.v3"
 const ToolIdentityCanonicalProfileVersion = "atape.acp-centered.v4"
+const StableToolCanonicalProfileVersion = "atape.acp-centered.v5"
 
 type Source struct {
 	AdapterID      string `json:"adapterId"`

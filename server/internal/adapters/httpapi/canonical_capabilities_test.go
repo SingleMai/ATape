@@ -36,7 +36,7 @@ func TestCanonicalCapabilitiesWithoutPublicationAffirmAcceptedProfiles(t *testin
 	if publication.Code != http.StatusServiceUnavailable {
 		t.Fatalf("publication unexpectedly advertised: %d", publication.Code)
 	}
-	for index, profile := range capabilities.CanonicalProfiles {
+	for index, profile := range append(capabilities.CanonicalProfiles, ingestion.StableToolCanonicalProfileVersion) {
 		t.Run(profile, func(t *testing.T) {
 			unknown := profile != ingestion.CanonicalProfileVersion
 			batch := ingestion.Batch{
@@ -83,6 +83,44 @@ func TestCanonicalCapabilitiesWithoutPublicationAffirmAcceptedProfiles(t *testin
 			}
 			if len(view.Events) != 1 || (view.Events[0].OccurredAt == nil) != unknown {
 				t.Fatalf("clock or record lost: %s", read.Body.String())
+			}
+		})
+	}
+}
+
+func TestCanonicalCapabilitiesV5RequiresExplicitOptIn(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		headers []string
+		v5      bool
+	}{
+		{name: "default"},
+		{name: "empty", headers: []string{""}},
+		{name: "old profile", headers: []string{ingestion.UnknownTimeCanonicalProfileVersion}},
+		{name: "unknown", headers: []string{"atape.acp-centered.v6"}},
+		{name: "syntax", headers: []string{ingestion.StableToolCanonicalProfileVersion + ";q=1"}},
+		{name: "exact", headers: []string{ingestion.StableToolCanonicalProfileVersion}, v5: true},
+		{name: "list", headers: []string{"unknown, " + ingestion.StableToolCanonicalProfileVersion + ", " + ingestion.UnknownTimeCanonicalProfileVersion}, v5: true},
+		{name: "empty tokens", headers: []string{" , " + ingestion.StableToolCanonicalProfileVersion + ",,"}, v5: true},
+		{name: "repeat", headers: []string{"unknown", ingestion.StableToolCanonicalProfileVersion, ingestion.StableToolCanonicalProfileVersion}, v5: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/api/v1/ingestion/canonical/capabilities", nil)
+			for _, header := range tc.headers {
+				r.Header.Add("ATape-Accept-Canonical-Profile", header)
+			}
+			w := httptest.NewRecorder()
+			testHandler(t).ServeHTTP(w, r)
+			var capabilities ingestion.Capabilities
+			if err := json.Unmarshal(w.Body.Bytes(), &capabilities); err != nil {
+				t.Fatal(err)
+			}
+			want := []string{ingestion.CanonicalProfileVersion, ingestion.UnknownTimeCanonicalProfileVersion, ingestion.ToolIdentityCanonicalProfileVersion}
+			if tc.v5 {
+				want = append(want, ingestion.StableToolCanonicalProfileVersion)
+			}
+			if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" || !reflect.DeepEqual(capabilities.CanonicalProfiles, want) {
+				t.Fatalf("capability negotiation: %d %s", w.Code, w.Body.String())
 			}
 		})
 	}

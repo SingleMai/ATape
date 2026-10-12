@@ -328,7 +328,10 @@ exec /bin/ps "$@"
     process.env.PATH = `${bin}:${originalPath}`
     const calls = async () => (await readFile(trace, "utf8").catch(() => "")).split("\n").filter(Boolean).length
     return { ...f, started, failure, calls,
-      entered: () => expect.poll(calls).toBe(1),
+      // Startup of the real external Test Adapter is scheduler-dependent.
+      // The production probe retains its own shorter deadline and must still
+      // return an owned process after the test releases it.
+      entered: () => expect.poll(calls, { timeout: 5_000 }).toBe(1),
       release: () => writeFile(release, "released"),
       async close() {
         try {

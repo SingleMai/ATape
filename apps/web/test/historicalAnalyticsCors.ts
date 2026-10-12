@@ -13,7 +13,7 @@ const tag = "v0.5.9"
 const repository = fileURLToPath(new URL("../../..", import.meta.url))
 const sha256 = (bytes: Uint8Array | string) => createHash("sha256").update(bytes).digest("hex")
 
-export const analyticsAccept = "application/vnd.atape.session-analytics.v3+json, application/json"
+export const analyticsAccept = "application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json"
 export const corsCookie = { name: "atape_session_dev", value: "activity-cors-test" }
 export type CorsRequest = {
   readonly kind: "request"

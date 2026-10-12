@@ -262,13 +262,44 @@ const canonical = (observation: AdapterObservation, engine: Engine, output: Repo
     if (value.sessionUpdate === "user_message_chunk" || value.sessionUpdate === "agent_message_chunk" || value.sessionUpdate === "agent_thought_chunk") return { ...value, content: content(value.content) }
     const input = Object.hasOwn(value, "rawInput") ? visitor.walk(value.rawInput) : undefined
     const outputValue = Object.hasOwn(value, "rawOutput") ? visitor.walk(value.rawOutput) : undefined
-    const metadata = () => {
-      let masked: ReturnType<typeof visitor.walk>
-      try { masked = visitor.walk(value._meta) }
+    let maskedMetadata: ReturnType<typeof visitor.walk> | undefined
+    let unsafeMetadata = false
+    if (Object.hasOwn(value, "_meta")) {
+      try { maskedMetadata = visitor.walk(value._meta) }
       catch (cause) {
-        if (cause instanceof UnsafeRedaction && cause.reason === "redaction") return { [ToolIdentityMetaKey]: null }
-        throw cause
+        if (cause instanceof UnsafeRedaction && cause.reason === "redaction") unsafeMetadata = true
+        else throw cause
       }
+    }
+    const originalIdentity = value._meta?.[ToolIdentityMetaKey]
+    const copiedNames = originalIdentity == null ? [] : [originalIdentity.name,
+      ...(originalIdentity.type === "mcp" ? [originalIdentity.server] : [])]
+    const envelope = maskedMetadata?.value
+    const identityValue = isObject(envelope) ? envelope[ToolIdentityMetaKey] : undefined
+    const visibleIdentity = isObject(identityValue) ? identityValue : undefined
+    const metadataHidesName = (name: string) => originalIdentity != null &&
+      (unsafeMetadata || visibleIdentity === undefined || originalIdentity.name === name && visibleIdentity.name !== name ||
+        originalIdentity.type === "mcp" && originalIdentity.server === name && visibleIdentity.server !== name)
+    const hiddenNames = copiedNames.filter(name =>
+      metadataHidesName(name) || input?.changed && maskedIdentitySource(value.rawInput, input.value, new Set([name])) ||
+      outputValue?.changed && maskedIdentitySource(value.rawOutput, outputValue.value, new Set([name])))
+    const maskedTitle = (value: string) => {
+      // Native titles are capped at 500 UTF-8 bytes. A boundary may retain only
+      // a prefix of a hidden copied name; replacing the complete name cannot
+      // protect that copy. Fail closed for a possible truncated suffix.
+      if (byteLength(value) >= 497 && hiddenNames.some(name => {
+        for (let start = 0; start < value.length; start++) {
+          const suffix = value.slice(start)
+          if (suffix.length < name.length && name.startsWith(suffix)) return true
+        }
+        return false
+      })) return "[REDACTED]"
+      return title(hiddenNames.sort((a, b) => b.length - a.length)
+        .reduce((current, name) => current.replaceAll(name, "[REDACTED]"), value))
+    }
+    const metadata = () => {
+      const masked = maskedMetadata
+      if (unsafeMetadata || masked === undefined) return { [ToolIdentityMetaKey]: null }
       // Names are grouping identities. Any masking must clear the complete
       // fact rather than merge distinct secret names into one replacement.
       if (masked.changed) return { [ToolIdentityMetaKey]: null }
@@ -283,7 +314,7 @@ const canonical = (observation: AdapterObservation, engine: Engine, output: Repo
       }
       return decoded
     }
-    const result = { ...value, ...(typeof value.title === "string" ? { title: title(value.title) } : {}),
+    const result = { ...value, ...(typeof value.title === "string" ? { title: maskedTitle(value.title) } : {}),
       ...(Object.hasOwn(value, "_meta") ? { _meta: metadata() } : {}),
       ...(input === undefined ? {} : { rawInput: input.value }), ...(outputValue === undefined ? {} : { rawOutput: outputValue.value }) }
     if (byteLength(JSON.stringify(result)) > ToolUpdateBytes) throw new UnsafeRedaction("limit")

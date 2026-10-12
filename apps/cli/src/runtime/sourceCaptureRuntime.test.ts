@@ -1,12 +1,12 @@
 import { AdapterRuntimes, SourceCaptureCollector, makeSourceCaptureCollectorLayer, runCollectionCycle } from "@atape/application"
-import { AdapterProtocolVersion, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, ToolIdentityMetaKey, SourceCaptureVersion, SourceCaptureVersion2, LegacyMigrationVersion, type AdapterInstallation, type LocalProject, type SourceCaptureView, type SourceDiscoveryPage, type SourceCaptureViewV2 } from "@atape/domain"
+import { AdapterProtocolVersion, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion5, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfile5, ToolIdentityMetaKey, SourceCaptureVersion, SourceCaptureVersion2, LegacyMigrationVersion, type AdapterInstallation, type LocalProject, type SourceCaptureView, type SourceDiscoveryPage, type SourceCaptureViewV2 } from "@atape/domain"
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import { makeNodeClientLayer, type NodeClientPaths } from "./clientLayers.ts"
 import { sourceCollectionLimits } from "./fixtures/source-collection-test-support.ts"
@@ -51,7 +51,44 @@ export const createAtapeAdapter = context => createOpenCodeRuntime({ path: ${JSO
 }
 
 describe("Host source runtime capability", () => {
-  it.each([undefined, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4])("admits unknown source times only with explicit profile %s", async canonicalProfileVersion => {
+  it.each([undefined, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfile5] as const)(
+    "advertises only the profiles supported by the package's declared minimum %s", async declaredMinimum => {
+      const expected = declaredMinimum === PublicationTargetProfile5
+        ? [CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion5]
+        : [CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4]
+      const oldSDK = Schema.Struct({ canonicalProfiles: Schema.Array(Schema.Literals([CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4])).check(Schema.isMaxLength(3)) })
+      const hosted = hostSourceCapture("fixture", { protocolVersion: SourceCaptureVersion2, discover: () => undefined, open: request => {
+        expect(request.projection.canonicalProfiles).toEqual(expected)
+        if (declaredMinimum !== PublicationTargetProfile5) Schema.decodeUnknownSync(oldSDK)(request.projection)
+        return { profile: "advertisement-fixture", canonicalProfileVersion: declaredMinimum === PublicationTargetProfile5 ? CanonicalProfileVersion5 : CanonicalProfileVersion,
+          origin: { sourceId: "root", originKey: "origin", cwd: "/fixture" },
+          session: { sourceSessionId: "root", title: "Root", summary: "", insight: "", actor: { name: "User", harness: "Fixture" }, branch: "", status: "idle",
+            captureStatus: "complete", reportedEventCount: 0, updatedAt: "2026-09-10T00:00:00Z" },
+          threads: [{ sourceThreadId: "root", label: "Root", summary: "", captureStatus: "complete" }],
+          sourceCheckpoint: "proof", target: { threads: 1, events: 0, usage: 0, retainedThreadIds: [] },
+          sourceFailures: [], sourceFailuresTruncated: false, read: () => ({ frames: [], done: true }), close: () => undefined }
+      } }, new AbortController().signal, declaredMinimum)
+      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const view = yield* hosted.open({ sourceId: "root", rawEnabled: false, limits, projection })
+        expect(yield* view.read()).toMatchObject({ done: true })
+      })))
+    })
+
+  it("rejects a v5 header from a package that received only the older advertisement", async () => {
+    let reads = 0, closes = 0
+    const hosted = hostSourceCapture("fixture", { protocolVersion: SourceCaptureVersion, discover: () => undefined, open: () => ({
+      profile: "undeclared-v5", canonicalProfileVersion: CanonicalProfileVersion5, origin: { sourceId: "root", originKey: "origin", cwd: "/fixture" },
+      session: { sourceSessionId: "root", title: "Root", summary: "", insight: "", actor: { name: "User", harness: "Fixture" }, branch: "", status: "idle",
+        captureStatus: "complete", reportedEventCount: 0, updatedAt: null },
+      threads: [{ sourceThreadId: "root", label: "Root", summary: "", captureStatus: "complete" }], target: { threads: 1, events: 0, usage: 0 },
+      read: () => { reads++; return { frames: [], done: true } }, close: () => { closes++ }
+    }) }, new AbortController().signal)
+    await expect(Effect.runPromise(Effect.scoped(hosted.open({ sourceId: "root", rawEnabled: false, limits, projection }))))
+      .rejects.toMatchObject({ _tag: "AdapterRuntimeError", reason: "contract", retryable: false })
+    expect(reads).toBe(0); expect(closes).toBe(1)
+  })
+
+  it.each([undefined, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion5])("admits unknown source times only with explicit profile %s", async canonicalProfileVersion => {
     let closes = 0
     const view: SourceCaptureView = { profile: "fixture.time", origin: { sourceId: "root", originKey: "origin", cwd: "/fixture" },
       ...(canonicalProfileVersion === undefined ? {} : { canonicalProfileVersion }),
@@ -62,20 +99,21 @@ describe("Host source runtime capability", () => {
         orderFidelity: "native", fidelity: "native", occurredAt: null,
         update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "unknown occurrence" } } }] }], done: true }),
       close: () => { closes++ } }
-    const hosted = hostSourceCapture("fixture", { protocolVersion: SourceCaptureVersion, discover: () => undefined, open: () => view }, new AbortController().signal)
+    const hosted = hostSourceCapture("fixture", { protocolVersion: SourceCaptureVersion, discover: () => undefined, open: () => view }, new AbortController().signal,
+      canonicalProfileVersion === CanonicalProfileVersion5 ? PublicationTargetProfile5 : undefined)
     const read = Effect.scoped(Effect.gen(function*() {
       const opened = yield* hosted.open({ sourceId: "root", rawEnabled: false, limits, projection })
       expect(opened.session.updatedAt).toBeNull()
       return yield* opened.read()
     }))
-    if (canonicalProfileVersion === CanonicalProfileVersion3 || canonicalProfileVersion === CanonicalProfileVersion4) {
+    if (canonicalProfileVersion === CanonicalProfileVersion3 || canonicalProfileVersion === CanonicalProfileVersion4 || canonicalProfileVersion === CanonicalProfileVersion5) {
       const page = await Effect.runPromise(read)
       expect(page.frames[0]?.events[0]?.occurredAt).toBeNull()
     } else await expect(Effect.runPromise(read)).rejects.toMatchObject({ reason: "contract" })
     expect(closes).toBe(1)
   })
 
-  it.each([CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4])(
+  it.each([CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion5])(
     "advertises explicit Host support and retains tool identities only with %s", async canonicalProfileVersion => {
       let closes = 0
       const metadata = { [ToolIdentityMetaKey]: { type: "skill", name: "review" } }
@@ -89,14 +127,16 @@ describe("Host source runtime capability", () => {
           update: { sessionUpdate: "tool_call", toolCallId: "call", title: "Skill", _meta: metadata } }] }], done: true }),
         close: () => { closes++ } }
       const hosted = hostSourceCapture("fixture", { protocolVersion: SourceCaptureVersion, discover: () => undefined, open: request => {
-        expect(request.projection.canonicalProfiles).toEqual([CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4])
+        expect(request.projection.canonicalProfiles).toEqual(canonicalProfileVersion === CanonicalProfileVersion5
+          ? [CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion5]
+          : [CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4])
         return view
-      } }, new AbortController().signal)
+      } }, new AbortController().signal, canonicalProfileVersion === CanonicalProfileVersion5 ? PublicationTargetProfile5 : undefined)
       const read = Effect.scoped(Effect.gen(function*() {
         const opened = yield* hosted.open({ sourceId: "root", rawEnabled: false, limits, projection })
         return yield* opened.read()
       }))
-      if (canonicalProfileVersion === CanonicalProfileVersion4) {
+      if (canonicalProfileVersion === CanonicalProfileVersion4 || canonicalProfileVersion === CanonicalProfileVersion5) {
         const page = await Effect.runPromise(read)
         expect(page.frames[0]?.events[0]?.update).toHaveProperty("_meta", metadata)
       } else await expect(Effect.runPromise(read)).rejects.toMatchObject({ reason: "contract" })
@@ -227,6 +267,32 @@ describe("Host source runtime capability", () => {
     const undeclared = { ...f.manifest, atapeAdapter: { ...f.manifest.atapeAdapter, sourceCapture: undefined } }
     await writeFile(join(f.packageRoot, "package.json"), JSON.stringify(undeclared))
     await expect(f.run(Effect.scoped(f.open))).rejects.toMatchObject({ reason: "contract" })
+  })
+  it("carries the validated package v5 minimum through the actual Node runtime Interface", async () => {
+    const f = await fixture()
+    await writeFile(join(f.packageRoot, "package.json"), JSON.stringify({ ...f.manifest, atapeAdapter: {
+      ...f.manifest.atapeAdapter, sourceCapture: SourceCaptureVersion2, publicationTargetProfile: PublicationTargetProfile5
+    } }))
+    const header = { profile: "installed-v5", canonicalProfileVersion: CanonicalProfileVersion5,
+      origin: { sourceId: "root", originKey: "origin", cwd: f.root },
+      session: { sourceSessionId: "root", title: "Root", summary: "", insight: "", actor: { name: "User", harness: "Fixture" }, branch: "", status: "idle",
+        captureStatus: "complete", reportedEventCount: 0, updatedAt: null },
+      threads: [{ sourceThreadId: "root", label: "Root", summary: "", captureStatus: "complete" }], sourceCheckpoint: "proof",
+      target: { threads: 1, events: 0, usage: 0, retainedThreadIds: [] }, sourceFailures: [], sourceFailuresTruncated: false }
+    await writeFile(join(f.packageRoot, "index.mjs"), `export const createAtapeAdapter = () => ({
+      sourceCapture: { protocolVersion: ${JSON.stringify(SourceCaptureVersion2)}, discover: () => undefined,
+        open(request) {
+          if (!request.projection.canonicalProfiles.includes(${JSON.stringify(CanonicalProfileVersion5)})) throw new Error('v5 Host support missing');
+          return { ...${JSON.stringify(header)}, read: () => ({ frames: [], done: true }), close() {} };
+        } }, close() {} });`)
+    await f.run(Effect.scoped(Effect.gen(function*() {
+      const runtime = yield* f.open
+      if (!("sourceCapture" in runtime)) throw new Error("source capability missing")
+      expect(runtime.publicationTargetProfile).toBe(PublicationTargetProfile5)
+      const view = yield* runtime.sourceCapture.open({ sourceId: "root", rawEnabled: false, limits, projection })
+      expect(view.canonicalProfileVersion).toBe(CanonicalProfileVersion5)
+      expect(yield* view.read()).toMatchObject({ done: true })
+    })))
   })
   it("rejects mismatched v2 and legacy-migration manifest capabilities before collection", async () => {
     const f = await fixture()

@@ -28,9 +28,12 @@ The fields mean:
 - `gitAttribution` is required for Git capture and declares use of the Host's
   `atape.git-attribution.v1` callback. It may be omitted for directory-only capture.
   The Host checks this capability before importing a Git Adapter.
-- `legacyCanonicalProfile: "atape.acp-centered.v3"` explicitly opts a paged
-  legacy runtime into nullable source clocks. It is mutually exclusive with
-  `sourceCapture`; omission retains the default v2 profile.
+- `legacyCanonicalProfile` explicitly opts a paged legacy runtime into
+  `"atape.acp-centered.v3"` nullable clocks or
+  `"atape.acp-centered.v5"` nullable clocks and stable native tool identities.
+  It is mutually exclusive with `sourceCapture`; omission retains the default
+  v2 profile. The Host and Server must affirm the selected profile before
+  collection reads source bytes or advances progress.
 
 The package itself must also have valid `name` and `version` fields. Its installed name must match the requested package. npm lifecycle scripts are disabled, so build artifacts must already be present in the published or local package.
 
@@ -94,25 +97,22 @@ See [ADR-0037](../architecture/adr/0037-shared-git-source-attribution.md).
 
 An Adapter returns no more than the requested limits. When it emits observations it must advance to a non-empty replacement cursor. `hasMore: true` requires a non-empty replacement cursor different from the requested cursor, but may have no observations when traversal advances without new content. The Host commits that progress without uploading fabricated observations and continues within its per-cycle page limit. Given the same committed cursor, an Adapter must reproduce the same observation identities, revisions, source clocks, segmentation, and source bytes until the Host advances it. Observation metadata used by Raw receipts must also remain reconstructible across retries; it cannot fill missing source clocks.
 
-A nullable-clock legacy factory must require the Host's
-`context.legacyCanonicalProfiles` to include v3 before source access, return
-`canonicalProfileVersion: "atape.acp-centered.v3"`, and defer source opening until
-`collect`. The Host verifies the manifest/runtime agreement and affirms the
-Server's Canonical profile before collecting or mutating progress. Neither an
-unknown field ignored by an old Host nor a null value implicitly selects v3.
-The genuine published 0.5.9 Host refuses the new Codex factory; use a Host release
-that implements this capability. Checkout behavior does not establish package
-publication. See [ADR-0122](../architecture/adr/0122-explicit-legacy-source-clocks.md).
+A paged factory declaring v3 or v5 must require the selected profile in
+`context.legacyCanonicalProfiles` before source access, return the matching
+`canonicalProfileVersion`, and defer source opening until `collect`. The Host
+verifies manifest/runtime agreement and affirms that Canonical profile on the
+Server before collecting or mutating progress. Neither an ignored optional field
+nor a null source clock implicitly selects a profile. The published 0.5.10 Host
+supports v3, while the current Codex revision requires a supporting v5 Host.
+See [ADR-0122](../architecture/adr/0122-explicit-legacy-source-clocks.md) and
+[the v5 boundary](#bounded-source-capture-capability).
 
-For the first managed update from the genuine published 0.5.9 parent, an active
-Codex candidate declaring this capability causes the target and parent to
-disagree on their read-only prerequisite scope. The update is rejected before
-pausing collection, including when the capture-state contract is unchanged.
-Stop sync before upgrading the CLI and matching bundle, preserving existing
-capture state. Genuine old/current prerequisite Interface checks establish the
-stopped scope agreement; a complete stopped managed handoff was not exercised
-in this increment. See [Codex clock upgrades](codex.md#source-clock-quality-and-replay)
-for the precise support and replay limits.
+The genuine published 0.5.9 parent rejected its first active Codex nullable-clock
+update before pausing collection because parent and target prerequisite scopes
+differed. The stopped complete-bundle handoff was subsequently verified for
+0.5.10; that earlier evidence does not establish a v5 update or rollback path.
+Preserve capture state and follow the specific
+[upgrade guidance](../cli/setup-and-adapters.md#stable-native-tool-identity-checkout-increment).
 
 Pages may include local `sourceFailures: [{ source, reason }]` diagnostics and
 `sourceFailuresTruncated: true` when further failures were omitted. Reasons are
@@ -189,7 +189,8 @@ providers need no profile change. See
 
 SourceCapture v2 packages can declare the static Server minimum as
 `publicationTargetProfile: "atape.publication-target.v2"` or
-`"atape.publication-target.v3"`, or `"atape.publication-target.v4"`. Omission retains the v2 minimum. The field is
+`"atape.publication-target.v3"`, `"atape.publication-target.v4"`, or
+`"atape.publication-target.v5"`. Omission retains the v2 minimum. The field is
 invalid without `sourceCapture: "atape.source-capture.v2"`; unknown profiles are
 rejected. Sources emitting Canonical v3, including Cursor, declare v3 so managed
 migration preflight can negotiate and verify it before pausing collection,
@@ -202,10 +203,40 @@ Canonical v4 extends v3 with the closed ACP `_meta` namespace
 profiles reject this extension. The new Host supplies supported profiles in
 `open(...).projection.canonicalProfiles`; a v4 Adapter must check for v4 before
 reading source bytes. This explicit local handshake also prevents older Hosts
-that strip unknown optional fields from silently losing identity. Current
-Claude declares the static v4 minimum and selects v4 for its complete target.
+that strip unknown optional fields from silently losing identity. An Adapter
+selecting v4 requires publication target v4 for its complete target.
 See [v4 ingestion](../api/canonical-ingestion.md#v4-normalized-tool-identity) for
 closed shapes, null/absence semantics, bounds and redaction.
+
+Canonical v5 adds `{"type":"tool","name":"native-name"}` to that namespace.
+V4 still accepts only MCP/Skill identities. Current checkout Claude declares
+publication target v5 and checks explicit v5 Host support; Codex declares the
+paged legacy Canonical v5 profile and checks its local Host advertisement.
+Server discovery exposes Canonical v5 only to the new opt-in
+`ATape-Accept-Canonical-Profile: atape.acp-centered.v5`; the default retains
+v2/v3/v4 for published clients. Publication v5 likewise requires the explicit
+target opt-in. Neither discovery path silently downgrades a required v5 source.
+Ordinary source collection also checks the validated package minimum before
+opening its account journal, discovering sources or adopting legacy history;
+managed-update preflight is not its only admission check. The Node Host gives
+only a SourceCapture package declaring target v5 the expanded v2/v3/v4/v5
+projection list. Older and undeclared packages retain v2/v3/v4 for their closed
+SDK decoders, and a source header cannot exceed that advertisement. Paged
+factories similarly retain the earlier v3 Host tuple unless they declare v5.
+
+Names come from native fields or closed native item types in these two Adapters,
+not display-label classification in the Host or Server. Upload preparation
+retains the existing identity and copied-field redaction behavior. Available
+source history can replay with stable Event IDs and higher revisions; already
+frozen accepted units and Raw receipts are not rewritten. V5 source recovery
+metadata records literal `atape.acp-centered.v5`. Older Hosts explicitly reject
+it, so v4's historical compatibility encoding does not establish v5 rollback.
+
+This increment is not part of the published/deployed 0.5.10 release. A supporting
+Server, CLI and Adapters must be updated together before collection starts.
+Versions in this checkout remain 0.5.10 until a separate release. See
+[v5 ingestion](../api/canonical-ingestion.md#v5-stable-native-tool-identity) and
+[upgrade recovery](../cli/setup-and-adapters.md#stable-native-tool-identity-checkout-increment).
 
 Unlike the paged observation runtime's attribution callback, discovery passes
 source evidence to the Host, which resolves directory/Git membership before

@@ -28,7 +28,7 @@ export class BrowserHTTPError extends Error {
 }
 
 type RequestOptions = {
-  readonly acceptAnalyticsVersion?: 3
+  readonly acceptAnalyticsVersion?: 3 | 4
   readonly responseProfile?: "conversation-page" | "raw-content-page"
   readonly method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE"
   readonly body?: unknown
@@ -166,8 +166,10 @@ export const browserRequest = (path: string, options: RequestOptions = {}): Effe
   Effect.tryPromise({
     try: async (interruption) => {
       const method = options.method ?? "GET"
-      const headers = new Headers({ Accept: options.acceptAnalyticsVersion === 3
-        ? "application/vnd.atape.session-analytics.v3+json, application/json" : "application/json" })
+      const headers = new Headers({ Accept: options.acceptAnalyticsVersion === 4
+        ? "application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json"
+        : options.acceptAnalyticsVersion === 3
+          ? "application/vnd.atape.session-analytics.v3+json, application/json" : "application/json" })
       if (options.body !== undefined) headers.set("Content-Type", "application/json")
       if (options.csrf) {
         if (csrfToken === undefined) {

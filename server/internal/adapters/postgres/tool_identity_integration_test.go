@@ -128,6 +128,89 @@ func TestToolIdentityPublicationContract(t *testing.T) {
 		t.Fatal(e)
 	}
 	assertView(native.SessionID, "")
+	// V5 ordinary identities travel through the same admitted publication and
+	// authorized snapshot Interfaces; display commands never select the group.
+	t.Run("stable tool v5", func(t *testing.T) {
+		b := batch("stable-tool-publication")
+		b.CanonicalProfileVersion = ingestion.StableToolCanonicalProfileVersion
+		b.Events[0].ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"one","title":"ls source-private","kind":"execute","_meta":{"atape.dev/tool-identity":{"type":"tool","name":"exec_command"}},"rawInput":{"private":"source-only"}}`
+		b.Events[1].ToolUpdateJSON = `{"sessionUpdate":"tool_call_update","toolCallId":"one","title":"final first command","status":"completed"}`
+		b.Events[2].ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"two","title":"cat source-private","kind":"execute","_meta":{"atape.dev/tool-identity":{"type":"tool","name":"exec_command"}}}`
+		unknown := b.Events[0]
+		unknown.SourceEventID, unknown.SourceOrder = "legacy-one", 4
+		unknown.ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"legacy-one","title":"unknown first command","kind":"execute"}`
+		other := unknown
+		other.SourceEventID, other.SourceOrder = "legacy-two", 5
+		other.ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"legacy-two","title":"unknown second command","kind":"execute"}`
+		b.Events = append(b.Events, unknown, other)
+		b.Session.ReportedEventCount = len(b.Events)
+		a := stage(b, publication.StableToolTargetProfile, "")
+		if _, e := writer.Validate(ctx, cli, a.ID); e != nil {
+			t.Fatal(e)
+		}
+		active, e := writer.Activate(ctx, cli, a.ID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		module := sessionanalytics.New(reader)
+		q := sessionanalytics.Query{AnalyticsVersion: 4, Limit: 1}
+		view, e := module.Open(ctx, web, a.SessionID, q)
+		if e != nil || view.Head != active.Head || len(view.Tools) != 2 || view.Tools[0].Identity == nil || view.Tools[0].Name != "exec_command" || view.Tools[0].Completed != 1 || view.Tools[0].Unknown != 1 || *view.Summary.IdentifiedToolCalls != 2 || *view.Summary.UnidentifiedToolCalls != 2 || view.Capabilities.UnclassifiedCalls != 4 || view.Activity.RecordedTimeEvents != 1 || view.Activity.UnknownTimeEvents != 4 {
+			t.Fatalf("stable publication facts: %+v %v", view, e)
+		}
+		wire, _ := json.Marshal(view)
+		if strings.Contains(string(wire), "source-only") || strings.Contains(string(wire), "rawInput") {
+			t.Fatal("stable analytics exposed payload")
+		}
+		q.Tool, q.Snapshot = view.Tools[0].Key, view.Snapshot
+		page, e := module.Open(ctx, web, a.SessionID, q)
+		if e != nil || page.Evidence.NextCursor == "" || len(page.Evidence.Items) != 1 || page.Evidence.Items[0].Label != "final first command" {
+			t.Fatalf("stable page: %+v %v", page, e)
+		}
+		q.Cursor = page.Evidence.NextCursor
+		last, e := module.Open(ctx, web, a.SessionID, q)
+		if e != nil || len(last.Evidence.Items) != 1 || last.Evidence.Items[0].EventID == page.Evidence.Items[0].EventID || last.Evidence.Items[0].Label != "cat source-private" {
+			t.Fatalf("stable continuation: %+v %v", last, e)
+		}
+		item := page.Evidence.Items[0]
+		original, ok, e := reader.ConversationPage(ctx, web, a.SessionID, item.ThreadID, canonical.ConversationPageRequest{Limit: 1, Snapshot: view.Snapshot, AtEventID: item.EventID})
+		if e != nil || !ok || len(original.Events) != 1 || original.Events[0].ID != item.EventID || original.Events[0].ToolLabel != item.Label {
+			t.Fatalf("stable conditional source: %v %v", ok, e)
+		}
+		unidentified, e := module.Open(ctx, web, a.SessionID, sessionanalytics.Query{AnalyticsVersion: 4, Tool: view.Tools[1].Key, Snapshot: view.Snapshot})
+		if e != nil || len(unidentified.Evidence.Items) != 2 || unidentified.Evidence.Items[0].Label != "unknown first command" || unidentified.Evidence.Items[1].Label != "unknown second command" {
+			t.Fatalf("unknown PostgreSQL group lost original titles: %+v %v", unidentified.Evidence, e)
+		}
+		b.Events[2].Revision++
+		b.Events[2].ToolUpdateJSON = strings.Replace(b.Events[2].ToolUpdateJSON, `{"type":"tool","name":"exec_command"}`, `null`, 1)
+		replacement := stage(b, publication.StableToolTargetProfile, active.Head)
+		if _, e = writer.Validate(ctx, cli, replacement.ID); e != nil {
+			t.Fatal(e)
+		}
+		if _, e = writer.Activate(ctx, cli, replacement.ID); e != nil {
+			t.Fatal(e)
+		}
+		_, e = module.Open(ctx, web, a.SessionID, q)
+		var stale *canonical.RefreshRequiredError
+		if !errors.As(e, &stale) {
+			t.Fatalf("stable cursor survived head replacement: %v", e)
+		}
+		_, _, e = reader.ConversationPage(ctx, web, a.SessionID, item.ThreadID, canonical.ConversationPageRequest{Limit: 1, Snapshot: view.Snapshot, AtEventID: item.EventID})
+		if !errors.As(e, &stale) {
+			t.Fatalf("stable Reader survived head replacement: %v", e)
+		}
+		fresh, e := module.Open(ctx, web, a.SessionID, sessionanalytics.Query{AnalyticsVersion: 4})
+		if e != nil || len(fresh.Tools) != 2 || *fresh.Summary.IdentifiedToolCalls != 1 || *fresh.Summary.UnidentifiedToolCalls != 3 {
+			t.Fatalf("null identity did not clear: %+v %v", fresh, e)
+		}
+		outsider := web
+		outsider.UserID = "01991b70-4d2b-7c96-a532-5818faba2e72"
+		_, e = module.Open(ctx, outsider, a.SessionID, sessionanalytics.Query{AnalyticsVersion: 4, Snapshot: fresh.Snapshot})
+		var hidden *sessionanalytics.NotFoundError
+		if !errors.As(e, &hidden) {
+			t.Fatalf("stable token granted access: %v", e)
+		}
+	})
 	b := batch("identity-publication")
 	a := stage(b, publication.ToolIdentityTargetProfile, "")
 	if _, e = writer.Validate(ctx, cli, a.ID); e != nil {
@@ -184,6 +267,8 @@ func TestToolIdentityPublicationContract(t *testing.T) {
 		{"target3-canonical4", ingestion.ToolIdentityCanonicalProfileVersion, publication.UnknownTimeTargetProfile},
 		{"target4-canonical3", ingestion.UnknownTimeCanonicalProfileVersion, publication.ToolIdentityTargetProfile},
 		{"old-profile-meta", ingestion.UnknownTimeCanonicalProfileVersion, publication.UnknownTimeTargetProfile},
+		{"target4-canonical5", ingestion.StableToolCanonicalProfileVersion, publication.ToolIdentityTargetProfile},
+		{"target5-canonical4", ingestion.ToolIdentityCanonicalProfileVersion, publication.StableToolTargetProfile},
 	} {
 		b := batch(tc.source)
 		b.CanonicalProfileVersion = tc.canonical

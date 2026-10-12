@@ -408,7 +408,10 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     const rejected = expect(task).rejects.toBeDefined()
     let artifact: string | undefined
     try {
-      await expect.poll(async () => readFile(f.environment.MANAGED_TEST_NPM_STARTED!, "utf8").catch(() => undefined)).toBeDefined()
+      // Preparation performs real ownership probes before starting the npm
+      // Test Adapter. Allow bounded startup scheduling independently of the
+      // production cancellation and process deadlines verified below.
+      await expect.poll(async () => readFile(f.environment.MANAGED_TEST_NPM_STARTED!, "utf8").catch(() => undefined), { timeout: 5_000 }).toBeDefined()
       artifact = await readFile(f.environment.MANAGED_TEST_NPM_STARTED!, "utf8")
       expect(JSON.parse(await readFile(artifact, "utf8")).version).toBe("0.5.3")
     } finally { cancellation.abort(); await rejected }
@@ -416,7 +419,7 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     await expect(readFile(artifact!)).rejects.toMatchObject({ code: "ENOENT" })
     expect(await readdir(join(f.paths.atapeHome, "cache", "release-discovery", "artifacts"))).toEqual([])
     expect(await needsUpdateRecovery(f.paths)).toBe(false)
-  })
+  }, 15_000)
 
   it("recognizes only the owning npm installation and does not inspect npm for development builds", async () => {
     const f = await fixture()

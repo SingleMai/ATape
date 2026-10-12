@@ -66,7 +66,6 @@ func (h *Handler) readSessionAnalytics(w http.ResponseWriter, r *http.Request, e
 // The standard safelisted Accept header allows one request to an older Server:
 // it can ignore this vendor range and return its existing JSON representation.
 func analyticsVersion(values []string) (int, bool) {
-	const vendor = "application/vnd.atape.session-analytics.v3+json"
 	version, size := sessionanalytics.Version, 0
 	for _, field := range values {
 		size += len(field)
@@ -74,14 +73,22 @@ func analyticsVersion(values []string) (int, bool) {
 			return 0, false
 		}
 		for _, item := range strings.Split(field, ",") {
+			raw := strings.ToLower(strings.TrimSpace(strings.SplitN(item, ";", 2)[0]))
+			selected := 0
+			switch raw {
+			case "application/vnd.atape.session-analytics.v3+json":
+				selected = sessionanalytics.ActivityVersion
+			case "application/vnd.atape.session-analytics.v4+json":
+				selected = sessionanalytics.StableToolVersion
+			}
 			media, parameters, err := mime.ParseMediaType(strings.TrimSpace(item))
 			if err != nil {
-				if strings.EqualFold(strings.TrimSpace(strings.SplitN(item, ";", 2)[0]), vendor) {
+				if selected != 0 {
 					return 0, false
 				}
 				continue
 			}
-			if media != vendor {
+			if selected == 0 || media != raw {
 				continue
 			}
 			quality := 1.0
@@ -91,8 +98,8 @@ func analyticsVersion(values []string) (int, bool) {
 				}
 				quality, _ = strconv.ParseFloat(value, 64)
 			}
-			if quality > 0 {
-				version = sessionanalytics.ActivityVersion
+			if quality > 0 && selected > version {
+				version = selected
 			}
 		}
 	}

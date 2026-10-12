@@ -662,5 +662,15 @@
   "analytics.unplacedCounts": "{unknown} 条时间未知 · {legacy} 条旧时间",
   "analytics.clockQuality.recorded": "来源时间已记录",
   "analytics.clockQuality.unknown": "时间未知",
-  "analytics.clockQuality.legacy": "旧时间"
+  "analytics.clockQuality.legacy": "旧时间",
+  "analytics.toolName": "工具名称",
+  "analytics.stableTools": "已记录工具",
+  "analytics.identityType": "身份类型",
+  "analytics.identity.tool": "工具",
+  "analytics.identity.skill": "Skill",
+  "analytics.identifiedToolCalls": "具有工具身份的调用",
+  "analytics.unidentifiedToolCalls": "缺少工具身份的调用",
+  "analytics.stableToolMeaning": "工具按记录的原生身份与类别分组。同一工具可能对应不同命令标题；证据保留每次调用的最后标题与明确结果。",
+  "analytics.toolIdentityCoverage": "未知表示未采集到可用身份，包括旧记录、尚未支持的来源信号或脱敏清除。不会根据命令标题猜测工具名称。",
+  "analytics.allToolNames": "所有工具"
 }

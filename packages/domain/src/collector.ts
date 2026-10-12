@@ -11,12 +11,14 @@ export const CanonicalIngestionProtocolVersion = "atape.canonical.v1" as const
 export const CanonicalProfileVersion = "atape.acp-centered.v2" as const
 export const CanonicalProfileVersion3 = "atape.acp-centered.v3" as const
 export const CanonicalProfileVersion4 = "atape.acp-centered.v4" as const
-export const CanonicalProfile = Schema.Literals([CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4])
+export const CanonicalProfileVersion5 = "atape.acp-centered.v5" as const
+export const CanonicalProfile = Schema.Literals([CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion5])
 export type CanonicalProfile = typeof CanonicalProfile.Type
+export const hasNullableSourceClocks = (profile: CanonicalProfile): boolean => profile !== CanonicalProfileVersion
 export const CanonicalCapabilitiesProtocol = "atape.canonical-capabilities.v1" as const
 export const CanonicalCapabilities = Schema.Struct({
   protocol: Schema.Literal(CanonicalCapabilitiesProtocol),
-  canonicalProfiles: Schema.Array(CanonicalProfile).check(Schema.isMinLength(1), Schema.isMaxLength(3),
+  canonicalProfiles: Schema.Array(CanonicalProfile).check(Schema.isMinLength(1), Schema.isMaxLength(4),
     Schema.makeFilter(profiles => new Set(profiles).size === profiles.length))
 })
 export type CanonicalCapabilities = typeof CanonicalCapabilities.Type
@@ -163,6 +165,8 @@ const toolIdentityName = Schema.String.check(Schema.makeFilter(value => value.tr
   !/[\uD800-\uDFFF]/u.test(value) &&
   new TextEncoder().encode(value).byteLength <= 500))
 export const AcpToolIdentity = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("tool"), name: toolIdentityName })
+    .annotate({ parseOptions: { onExcessProperty: "error" } }),
   Schema.Struct({ type: Schema.Literal("mcp"), server: toolIdentityName, name: toolIdentityName })
     .annotate({ parseOptions: { onExcessProperty: "error" } }),
   Schema.Struct({ type: Schema.Literal("skill"), name: toolIdentityName })
@@ -215,6 +219,10 @@ const AcpToolCallUpdate = Schema.Struct({
 
 export const AcpToolUpdate = Schema.Union([AcpToolCall, AcpToolCallUpdate])
 export type AcpToolUpdate = typeof AcpToolUpdate.Type
+
+export const admitsToolMetadata = (profile: CanonicalProfile, update: AcpToolUpdate): boolean =>
+  !Object.hasOwn(update, "_meta") || profile === CanonicalProfileVersion5 ||
+  profile === CanonicalProfileVersion4 && update._meta?.[ToolIdentityMetaKey]?.type !== "tool"
 
 export const AcpSessionUpdate = Schema.Union([
   AcpUserMessageChunk,
@@ -317,8 +325,8 @@ export type AdapterCollectionPage = typeof AdapterCollectionPage.Type
 
 export type AdapterOpenContext = {
   readonly creationReceipts?: CreationReceiptReader
-  /** Explicit Host support for nullable clocks on the paged legacy runtime. */
-  readonly legacyCanonicalProfiles?: readonly [typeof CanonicalProfileVersion3]
+  /** Explicit Host admission before the paged legacy runtime reads its source. */
+  readonly legacyCanonicalProfiles?: ReadonlyArray<typeof CanonicalProfileVersion3 | typeof CanonicalProfileVersion5>
   readonly protocolVersion: typeof AdapterProtocolVersion
   readonly adapter: {
     readonly id: string
@@ -364,7 +372,7 @@ export type AdapterCollectRequest = {
 }
 
 export type LegacyAdapterRuntime = {
-  readonly canonicalProfileVersion?: typeof CanonicalProfileVersion3
+  readonly canonicalProfileVersion?: typeof CanonicalProfileVersion3 | typeof CanonicalProfileVersion5
   readonly newSession?: NewSessionRuntime
   readonly collect: (request: AdapterCollectRequest) => unknown | PromiseLike<unknown>
   readonly close?: () => unknown | PromiseLike<unknown>
@@ -556,7 +564,7 @@ export const CanonicalBatch = Schema.Struct({
   threads: Schema.Array(AdapterThread),
   events: Schema.Array(CanonicalIngestionEvent),
   usage: Schema.optionalKey(Schema.Array(AdapterUsage))
-}).check(Schema.makeFilter(batch => batch.canonicalProfileVersion === CanonicalProfileVersion3 || batch.canonicalProfileVersion === CanonicalProfileVersion4 ||
+}).check(Schema.makeFilter(batch => hasNullableSourceClocks(batch.canonicalProfileVersion) ||
   batch.session.updatedAt !== null && batch.events.every(event => event.occurredAt !== null)))
 export type CanonicalBatch = typeof CanonicalBatch.Type
 

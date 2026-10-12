@@ -50,7 +50,7 @@
     "gitAttribution": "atape.git-attribution.v1",
     "rawCapturePolicy": "atape.raw-capture.v1",
     "sourceCapture": "atape.source-capture.v2",
-    "publicationTargetProfile": "atape.publication-target.v4",
+    "publicationTargetProfile": "atape.publication-target.v5",
     "legacyMigration": "atape.legacy-migration.v1",
     "adapterId": "claude",
     "displayName": "Claude Code",

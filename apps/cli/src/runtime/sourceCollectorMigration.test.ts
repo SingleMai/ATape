@@ -1,6 +1,6 @@
 import { CaptureJournals, CollectorStateStore, SourceCaptureCollector, makeSourceCaptureCollectorLayer, makeSecretRedactorLayer,
   AdapterRuntimeError, SecretRedactor, type HostedAdapter } from "@atape/application"
-import { SourceCaptureVersion2, PublicationTargetProfile2, type AdapterInstallation, type LocalProject, type CollectorCheckpoint } from "@atape/domain"
+import { SourceCaptureVersion2, CanonicalProfileVersion5, PublicationTargetProfile2, PublicationTargetProfile4, PublicationTargetProfile5, type AdapterInstallation, type LocalProject, type CollectorCheckpoint } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import { dirname } from "node:path"
@@ -14,7 +14,7 @@ import { sourceCollectionLimits as limits } from "./fixtures/source-collection-t
 // Generated v2 test Adapter over the controlled OpenCode-format source. These
 // tests exercise the public Host workflow, not native Claude rewind evidence.
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
-const setup = async (options: { readonly largeBaseline?: boolean; readonly rootOnly?: boolean; readonly diagnosticSource?: string; readonly serverV2?: boolean } = {}) => {
+const setup = async (options: { readonly largeBaseline?: boolean; readonly rootOnly?: boolean; readonly diagnosticSource?: string; readonly serverV2?: boolean; readonly serverV4?: boolean; readonly serverV5?: boolean } = {}) => {
   const native = await nativePreparationSource()
   const projected = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const view = yield* native.source(false), events = [], usage = []
@@ -22,7 +22,7 @@ const setup = async (options: { readonly largeBaseline?: boolean; readonly rootO
     return { events, usage }
   })))
   const floor = 900
-  const remote = await fixture(16384, {}, { v2: options.serverV2 ?? true, adoption: {
+  const remote = await fixture(16384, {}, { v2: options.serverV2 ?? true, v4: options.serverV4 ?? false, v5: options.serverV5 ?? false, adoption: {
     revisionFloor: floor, baselineThreads: options.largeBaseline ? [
       { ...native.metadata.threads.find(thread => thread.parentSourceThreadId === undefined)!, revision: floor },
       ...Array.from({ length: 20 }, (_, index) => ({ sourceThreadId: `old-child-${index}`, parentSourceThreadId: native.metadata.session.sourceSessionId,
@@ -133,6 +133,40 @@ describe("explicit legacy source migration through the Host Interface", () => {
     expect(f.remote.reservations()).toBe(0)
     expect(f.calls).toEqual([])
   })
+  it.each([false, true])("refuses a v5 package on a v4 Server before any capture work (legacy checkpoint: %s)", async legacy => {
+    const f = await setup({ serverV4: true })
+    if (legacy) await f.legacy([{ sourceSessionId: f.native.metadata.origin.sourceId, sourceObjectId: "retained-raw", sourceName: "old.jsonl",
+      mediaType: "application/jsonl", sourceGeneration: "original-generation", sourceOffset: 123, serverGeneration: 7, serverOffset: 123, finalized: true }])
+    const prior = await f.progress(), bytes = await readFile(f.stateFile).catch(() => null)
+    const files = (await readdir(dirname(f.stateFile))).sort()
+    await expect(f.cycle({ ...f.host, publicationTargetProfile: PublicationTargetProfile5 })).rejects.toMatchObject({
+      _tag: "AdapterRuntimeError", reason: "contract", sourceFailureReason: "unsupported", retryable: false
+    })
+    expect(await readFile(f.stateFile).catch(() => null)).toEqual(bytes)
+    expect((await readdir(dirname(f.stateFile))).sort()).toEqual(files)
+    expect(await f.progress()).toEqual(prior)
+    expect(f.calls).toEqual([])
+    expect(f.remote.adoptions()).toBe(0)
+    expect(f.remote.reservations()).toBe(0)
+    expect(f.remote.sent).toEqual([])
+    expect(f.remote.rawSent).toEqual([])
+  })
+  it("admits an older declared minimum without changing its source contract", async () => {
+    const f = await setup({ serverV4: true }); f.remote.policy(false)
+    expect(await f.cycle({ ...f.host, publicationTargetProfile: PublicationTargetProfile4 }))
+      .toMatchObject({ observations: 1, canonicalEvents: 6, sourceFailures: [] })
+    expect(f.remote.sent.map(bytes => JSON.parse(new TextDecoder().decode(bytes))).every(part => part.target.profile === PublicationTargetProfile2)).toBe(true)
+  })
+  it("collects a declared v5 source after the Server affirms that minimum", async () => {
+    const f = await setup({ serverV5: true }); f.remote.policy(false)
+    const selected: Extract<HostedAdapter, { sourceCapture: unknown }> = { ...f.host, publicationTargetProfile: PublicationTargetProfile5,
+      sourceCapture: { ...f.host.sourceCapture, open: request => f.host.sourceCapture.open(request).pipe(
+        Effect.map(view => ({ ...view, canonicalProfileVersion: CanonicalProfileVersion5 }))) } }
+    expect(await f.cycle(selected)).toMatchObject({ observations: 1, canonicalEvents: 6, sourceFailures: [] })
+    expect(f.calls.some(call => call.operation === "open")).toBe(true)
+    expect(f.remote.sent.map(bytes => JSON.parse(new TextDecoder().decode(bytes))).every(part =>
+      part.target.profile === PublicationTargetProfile5 && part.batch.canonicalProfileVersion === CanonicalProfileVersion5)).toBe(true)
+  }, 15000)
   it("authenticates before adoption, freezes all acknowledged metadata and seeds versions above the Server floor", async () => {
     const f = await setup(); f.remote.policy(false)
     const raw = [{ sourceSessionId: f.native.metadata.origin.sourceId, sourceObjectId: "legacy-owned-object", sourceName: "old.jsonl", mediaType: "application/jsonl",

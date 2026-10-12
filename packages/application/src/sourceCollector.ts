@@ -80,6 +80,11 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
         return yield* new AdapterRuntimeError({ adapterId: adapter.adapterId, reason: "contract", retryable: false,
           sourceFailureReason: "unsupported",
           message: "SourceCapture v2 requires Server publication v2 targets and legacy adoption. Update the Server before migrating this capture state." })
+      const required = host.publicationTargetProfile ?? PublicationTargetProfile2
+      if (!capabilities.targetProfiles.includes(required))
+        return yield* new AdapterRuntimeError({ adapterId: adapter.adapterId, reason: "contract", retryable: false,
+          sourceFailureReason: "unsupported",
+          message: `SourceCapture requires Server ${required}. Update the Server before opening source or capture state.` })
     }
     const journal = yield* journals.open({ instanceOrigin: project.instanceOrigin, userId: project.userId }, limits.journal)
     if (snapshot.installationId !== journal.binding.installationId) return yield* stateFailure("Collector and capture journal installation identities differ.")

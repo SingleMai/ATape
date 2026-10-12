@@ -1,4 +1,4 @@
-import { PublicationCapabilities, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfiles34, SourceCaptureVersion2, CanonicalProfileVersion3,
+import { PublicationCapabilities, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfile5, PublicationTargetProfiles34, PublicationTargetProfiles345, SourceCaptureVersion2, CanonicalProfileVersion3, CanonicalProfileVersion5,
   ClientConfig as ClientConfigSchema, AdapterManifest as AdapterManifestSchema, type ClientConfig } from "@atape/domain"
 import { createHash } from "node:crypto"
 import { realpath, stat } from "node:fs/promises"
@@ -53,24 +53,25 @@ const inspectScope = async (paths: NodeClientPaths, scope: CaptureMigrationScope
       adapters.push({ id, root, manifest })
     }
     const sourcesV2 = adapters.filter(adapter => adapter.manifest.sourceCapture === SourceCaptureVersion2)
-    const legacyV3 = adapters.some(adapter => adapter.manifest.legacyCanonicalProfile === CanonicalProfileVersion3)
-    const declaredTargetProfiles: Array<typeof PublicationTargetProfile2 | typeof PublicationTargetProfile3 | typeof PublicationTargetProfile4> =
+    const legacyProfiles = [...new Set(adapters.flatMap(adapter => adapter.manifest.legacyCanonicalProfile === undefined ? [] : [adapter.manifest.legacyCanonicalProfile]))].sort()
+    const declaredTargetProfiles: Array<typeof PublicationTargetProfile2 | typeof PublicationTargetProfile3 | typeof PublicationTargetProfile4 | typeof PublicationTargetProfile5> =
       sourcesV2.map(adapter => adapter.manifest.publicationTargetProfile ?? PublicationTargetProfile2)
     if (sourcesV2.length > 0) declaredTargetProfiles.push(PublicationTargetProfile2)
     const requiredTargetProfiles = [...new Set(declaredTargetProfiles)]
-    const publicationTargetProfile = sourcesV2.some(adapter => adapter.manifest.publicationTargetProfile === PublicationTargetProfile4)
+    const publicationTargetProfile = sourcesV2.some(adapter => adapter.manifest.publicationTargetProfile === PublicationTargetProfile5)
+      ? PublicationTargetProfile5 : sourcesV2.some(adapter => adapter.manifest.publicationTargetProfile === PublicationTargetProfile4)
       ? PublicationTargetProfile4 : sourcesV2.some(adapter => adapter.manifest.publicationTargetProfile === PublicationTargetProfile3)
       ? PublicationTargetProfile3 : PublicationTargetProfile2
     const required = new Map<string, { readonly instanceOrigin: string; readonly userId: string;
-      readonly publicationTargetProfile: typeof PublicationTargetProfile2 | typeof PublicationTargetProfile3 | typeof PublicationTargetProfile4;
-      readonly canonicalV3Required: boolean;
-      readonly requiredTargetProfiles: ReadonlyArray<typeof PublicationTargetProfile2 | typeof PublicationTargetProfile3 | typeof PublicationTargetProfile4> }>()
-    if (sourcesV2.length > 0 || legacyV3) {
+      readonly publicationTargetProfile: typeof PublicationTargetProfile2 | typeof PublicationTargetProfile3 | typeof PublicationTargetProfile4 | typeof PublicationTargetProfile5;
+      readonly canonicalProfilesRequired: ReadonlyArray<typeof CanonicalProfileVersion3 | typeof CanonicalProfileVersion5>;
+      readonly requiredTargetProfiles: ReadonlyArray<typeof PublicationTargetProfile2 | typeof PublicationTargetProfile3 | typeof PublicationTargetProfile4 | typeof PublicationTargetProfile5> }>()
+    if (sourcesV2.length > 0 || legacyProfiles.length > 0) {
       // activeInstanceOrigin is a console preference; every configured Project
       // participates in collection with the global enabled Adapter selection.
       for (const project of config.projects) required.set(JSON.stringify([project.instanceOrigin, project.userId]),
         { instanceOrigin: project.instanceOrigin, userId: project.userId, publicationTargetProfile,
-          canonicalV3Required: legacyV3, requiredTargetProfiles })
+          canonicalProfilesRequired: legacyProfiles, requiredTargetProfiles })
     }
     const bindings = ordered([...required.values()])
     const credentials = []
@@ -112,11 +113,12 @@ export const preflightCaptureMigrationPrerequisites = (paths: NodeClientPaths, s
     if (before.bindings.length === 0) return { prerequisiteScopeFingerprint: before.prerequisiteScopeFingerprint }
     const http = yield* AuthenticatedHTTPClient
     yield* Effect.forEach(before.bindings, binding => Effect.gen(function*() {
-      if (binding.canonicalV3Required) yield* ensureCanonicalProfile(http, binding, CanonicalProfileVersion3).pipe(Effect.mapError(canonicalFailure))
+      for (const profile of binding.canonicalProfilesRequired) yield* ensureCanonicalProfile(http, binding, profile).pipe(Effect.mapError(canonicalFailure))
       if (binding.requiredTargetProfiles.length === 0) return
       yield* http.request({ instanceOrigin: binding.instanceOrigin,
       expectedUserId: binding.userId, method: "GET", path: "/api/v1/publications/capabilities",
-      ...(binding.publicationTargetProfile === PublicationTargetProfile4 ? { acceptPublicationTarget: PublicationTargetProfiles34 } :
+      ...(binding.publicationTargetProfile === PublicationTargetProfile5 ? { acceptPublicationTarget: PublicationTargetProfiles345 } :
+        binding.publicationTargetProfile === PublicationTargetProfile4 ? { acceptPublicationTarget: PublicationTargetProfiles34 } :
         binding.publicationTargetProfile === PublicationTargetProfile3 ? { acceptPublicationTarget: PublicationTargetProfile3 } : {}) }).pipe(
       Effect.mapError(httpFailure), Effect.flatMap(response => {
         if (response.status !== 200) return Effect.fail(failure(response.status === 401 || response.status === 403 ? "authentication" :

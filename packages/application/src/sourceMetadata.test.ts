@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import { CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4 } from "@atape/domain"
+import { CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion5 } from "@atape/domain"
 import { decodeSourceMetadata, sourceMetadataJson } from "./sourceMetadata.ts"
 import { makeSecretRedactorLayer } from "./collectorPreparation.ts"
 import type { PublicationDraftView } from "./canonicalSourceProjection.ts"
@@ -9,7 +9,7 @@ const threads = [{ sourceThreadId: "root", label: "Root", summary: "", captureSt
 const decode = (value: unknown) => Effect.runPromise(decodeSourceMetadata(JSON.stringify(value)))
 
 describe("frozen source metadata Interface", () => {
-  it.each([undefined, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4])(
+  it.each([undefined, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion5])(
     "reads the existing direct profile %s without changing its effective value", async canonicalProfileVersion => {
       const source = { threads, ...(canonicalProfileVersion === undefined ? {} : { canonicalProfileVersion }) }
       expect(await decode(source)).toEqual(source)

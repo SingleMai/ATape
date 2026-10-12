@@ -1,6 +1,6 @@
 import { AdapterRuntimeError, AdapterRuntimes, GitSourceAttribution, GitAttributionError, ProjectLocator, type HostedAdapter } from "@atape/application"
 import { AdapterCollectionPage as AdapterCollectionPageSchema, AdapterManifest as AdapterManifestSchema,
-  AdapterProtocolVersion, GitAttributionVersion, GitSource, NewSessionVersion, CanonicalProfileVersion3,
+  AdapterProtocolVersion, GitAttributionVersion, GitSource, NewSessionVersion, CanonicalProfileVersion3, CanonicalProfileVersion5,
   type AdapterInstallation, type AdapterManifest, type AtapeAdapterModule, type AtapeAdapterRuntime } from "@atape/domain"
 import { lstat, readFile, realpath, stat } from "node:fs/promises"
 import { isAbsolute, join, relative, resolve, sep } from "node:path"
@@ -134,7 +134,8 @@ const loadAdapterRuntime = (
   const foreign = yield* Effect.tryPromise({
     try: (signal) => Promise.resolve(module.createAtapeAdapter?.({
       protocolVersion: AdapterProtocolVersion,
-      legacyCanonicalProfiles: [CanonicalProfileVersion3],
+      legacyCanonicalProfiles: manifest.legacyCanonicalProfile === CanonicalProfileVersion5
+        ? [CanonicalProfileVersion3, CanonicalProfileVersion5] : [CanonicalProfileVersion3],
       creationReceipts: { readConfirmed: (input, signal) => receipts.reader.readConfirmed(input, AbortSignal.any([signal, lifetime.signal])) },
       adapter: { id: adapter.adapterId, version: adapter.version },
       project: { id: project.id, type: project.type, path: project.path },
@@ -206,7 +207,8 @@ const loadAdapterRuntime = (
   } }
   if ("sourceCapture" in foreign) return { foreign, lifetime, hosted: {
     ...newSession,
-    sourceCapture: hostSourceCapture(adapter.adapterId, foreign.sourceCapture, lifetime.signal),
+    ...(manifest.publicationTargetProfile === undefined ? {} : { publicationTargetProfile: manifest.publicationTargetProfile }),
+    sourceCapture: hostSourceCapture(adapter.adapterId, foreign.sourceCapture, lifetime.signal, manifest.publicationTargetProfile),
     attribute: (source) => Schema.decodeUnknownEffect(GitSource)(source).pipe(
       Effect.mapError(() => runtimeFailure(adapter.adapterId, "contract", false, "Source supplied invalid Origin metadata.")),
       Effect.flatMap(source => {

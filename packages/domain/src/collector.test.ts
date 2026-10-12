@@ -60,7 +60,7 @@ describe("Adapter collection protocol", () => {
   })
   it.each([undefined, null, [], [CanonicalProfileVersion3, CanonicalProfileVersion3],
     [CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion3],
-    ["atape.acp-centered.v1"], ["atape.acp-centered.v5"], [3]])("rejects invalid Canonical capability lists %j", canonicalProfiles => {
+    ["atape.acp-centered.v1"], ["atape.acp-centered.v6"], [3]])("rejects invalid Canonical capability lists %j", canonicalProfiles => {
     expect(() => Schema.decodeUnknownSync(CanonicalCapabilities)({ protocol: CanonicalCapabilitiesProtocol,
       ...(canonicalProfiles === undefined ? {} : { canonicalProfiles }) })).toThrow()
   })

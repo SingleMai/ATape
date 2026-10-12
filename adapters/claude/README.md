@@ -27,8 +27,8 @@ of the earlier implementation.
 
 The factory exposes only `atape.source-capture.v2`, with explicit
 `atape.legacy-migration.v1` support for acknowledged earlier checkpoints. A compatible
-Host and publication-enabled Server with v4 targets and legacy adoption are required.
-The Host must explicitly advertise Canonical v4 when opening a source; older
+Host and publication-enabled Server with v5 targets and legacy adoption are required.
+The Host must explicitly advertise Canonical v5 when opening a source; older
 Hosts are rejected before source reads instead of dropping normalized identities.
 This checkout requirement is separate from any published Adapter version.
 
@@ -45,10 +45,14 @@ captured child can retain prior stored history with a diagnostic while the root
 advances. Raw-enabled capture also archives available historical child sources
 proved by admitted root receipts outside the selected path.
 
-Explicit MCP and `Skill` tool invocations preserve bounded identities for
+Explicit native tool names, MCP and `Skill` tool invocations preserve bounded identities for
 [Session Analytics](../../docs/session-analytics.md). Skill file reads and command
 expansions are not counted as Skill tools. The Server does not infer identity
 from labels or Raw, and upload redaction can explicitly clear a sensitive identity.
+The effective source profile is `claude.jsonl.active-path.3`; existing v1 source
+proof checkpoints remain readable. The Host replaces available older Canonical
+projections once and retains existing Raw receipts. Replay and new identities
+require available source bytes; a lost source does not erase captured history.
 
 Discovery uses `~/.claude/projects/*/*.jsonl`. `ATAPE_CLAUDE_HOME` selects an absolute
 alternate configuration directory; `ATAPE_CLAUDE_SESSION_FILE` selects an absolute

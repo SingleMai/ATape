@@ -2,7 +2,7 @@ import {
   CLIAuthenticationGateway,
   CLICredentialStore
 } from "@atape/application"
-import { normalizeInstanceTopology, PublicationTargetProfile3, PublicationTargetProfiles34, type StoredCLICredential } from "@atape/domain"
+import { normalizeInstanceTopology, CanonicalProfileVersion5, PublicationTargetProfile3, PublicationTargetProfile5, PublicationTargetProfiles34, PublicationTargetProfiles345, type StoredCLICredential } from "@atape/domain"
 import { hostname, platform, arch } from "node:os"
 import { cliVersion } from "../version.ts"
 import type { CLIDeviceMetadata } from "@atape/domain"
@@ -37,7 +37,8 @@ export type AuthenticatedHTTPRequest = {
   readonly path: `/${string}`
   readonly method: "GET" | "POST" | "PUT" | "DELETE"
   readonly idempotencyKey?: string
-  readonly acceptPublicationTarget?: typeof PublicationTargetProfile3 | typeof PublicationTargetProfiles34
+  readonly acceptPublicationTarget?: typeof PublicationTargetProfile3 | typeof PublicationTargetProfile5 | typeof PublicationTargetProfiles34 | typeof PublicationTargetProfiles345
+  readonly acceptCanonicalProfile?: typeof CanonicalProfileVersion5
   readonly deviceReport?: CLIDeviceMetadata & { readonly sync: import("@atape/domain").CLISyncReport }
 } & ({ readonly body?: unknown; readonly encodedJson?: never } | { readonly encodedJson: Uint8Array; readonly body?: never })
 
@@ -141,8 +142,11 @@ const credentialedRequest = (
   device?: CLIDeviceMetadata
 ): Effect.Effect<AuthenticatedHTTPResponse, AuthenticatedHTTPError> => Effect.tryPromise({
   try: async (signal) => {
+    if (input.acceptCanonicalProfile !== undefined &&
+      (input.acceptCanonicalProfile !== CanonicalProfileVersion5 || input.method !== "GET" ||
+        input.path !== "/api/v1/ingestion/canonical/capabilities")) throw new InvalidHTTPRequest()
     if (input.acceptPublicationTarget !== undefined &&
-      (input.acceptPublicationTarget !== PublicationTargetProfile3 && input.acceptPublicationTarget !== PublicationTargetProfiles34 || input.method !== "GET" ||
+      (input.acceptPublicationTarget !== PublicationTargetProfile3 && input.acceptPublicationTarget !== PublicationTargetProfile5 && input.acceptPublicationTarget !== PublicationTargetProfiles34 && input.acceptPublicationTarget !== PublicationTargetProfiles345 || input.method !== "GET" ||
         input.path !== "/api/v1/publications/capabilities")) throw new InvalidHTTPRequest()
     const headers = new Headers({
       Accept: "application/json",
@@ -150,6 +154,9 @@ const credentialedRequest = (
     })
     if (input.acceptPublicationTarget !== undefined) {
       headers.set("ATape-Accept-Publication-Target", input.acceptPublicationTarget)
+    }
+    if (input.acceptCanonicalProfile !== undefined) {
+      headers.set("ATape-Accept-Canonical-Profile", input.acceptCanonicalProfile)
     }
     if (device !== undefined) {
       const report = Buffer.from(JSON.stringify(device)).toString("base64url")

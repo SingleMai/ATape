@@ -11,7 +11,7 @@ export const SourceCaptureLimits = Schema.Struct({
 })
 export type SourceCaptureLimits = typeof SourceCaptureLimits.Type
 export const SourceProjectionLimits = Schema.Struct({ events: count(2_000_000), usage: count(1_000_000), pageItems: count(100), pageBytes: count(32 * 1024 * 1024),
-  canonicalProfiles: Schema.optionalKey(Schema.Array(CanonicalProfile).check(Schema.isMaxLength(3))) })
+  canonicalProfiles: Schema.optionalKey(Schema.Array(CanonicalProfile).check(Schema.isMaxLength(4))) })
 export type SourceProjectionLimits = typeof SourceProjectionLimits.Type
 const { revision: _eventRevision, projectionRevision: _projectionRevision, rawRef: _rawRef, ...eventFields } = AdapterEvent.fields
 const { revision: _sessionRevision, ...sessionFields } = AdapterSession.fields

@@ -3,8 +3,13 @@
 Session Analytics derives deterministic statistics and a bounded evidence page
 from the current authorized Canonical Session. The Go Module owns metric rules;
 the HTTP Adapter exposes its `Open` Interface. The analysis view connects
-statistics, normalized MCP/Skill identities, recorded activity ranges and conditional reader evidence links. This
+statistics, normalized tool identities, recorded activity ranges and conditional
+reader evidence links. This
 guide describes checkout behavior and does not claim publication or deployment.
+The stable native-tool increment uses Canonical/publication v5 and Analytics v4.
+It is not included in the published 0.5.10 packages or deployed 0.5.10 Server;
+package versions in this checkout remain 0.5.10 until a separately authorized
+release. Server, CLI and the affected Adapters require a coordinated update.
 
 ## Metrics and evidence
 
@@ -13,6 +18,7 @@ guide describes checkout behavior and does not claim publication or deployment.
 | `rootUserInputs` | Root-Thread user messages deduplicated by source order; delegated prompts are excluded |
 | `messageFragments`, `thoughtFragments` | Stored Canonical message and thought fragments; not inferred turns |
 | `toolCalls` | Distinct structured tool calls by Thread and tool call ID, merging later updates |
+| V4 `identifiedToolCalls`, `unidentifiedToolCalls` | Calls with or without usable normalized tool identity; their sum equals `toolCalls`, excluding unlinked legacy Events |
 | Tool outcomes | Latest explicit completed, failed, pending or in-progress state; absent status is unknown |
 | `childThreads` | Captured Threads with a parent; they remain within the owning Session |
 | `knownTimeEvents`, `unknownTimeEvents` | Source-clock coverage; upload time never fills an unknown occurrence time |
@@ -26,15 +32,55 @@ and `incompleteSamples` describe recorded samples, not completeness of the sourc
 conversation. Session and Thread `captureStatus` retain partial-capture disclosure.
 No work time, tool execution duration, cost, productivity score, inferred outcome
 or generated summary is provided. Record span describes the first and last
-eligible stored source clocks. Codex projection v5 corrects fabricated clocks and retains v4's
-historical missing-status correction on successful source replay. Unreplayed
+eligible stored source clocks. Codex projection v6 retains projection v5's
+correction of fabricated clocks and v4's historical missing-status correction
+on successful source replay. Unreplayed
 historical records can still carry an older Adapter's epoch or outcome; saved
 non-null clock coverage alone does not establish clock quality. See
 [Codex source clocks](adapters/codex.md#source-clock-quality-and-replay).
 
+## Stable tool grouping
+
+Analytics v4 groups structured calls by explicit tool identity and recorded kind.
+Every row includes `key`, nullable `identity`, `name`, `kind` and the existing
+outcome counts. A native tool or Skill uses its explicit name; an MCP tool uses
+`server/name`. Calls without usable identity form `unknown` rows grouped by kind.
+Changing a command title does not create another tool group. Versions 1–3 retain
+their earlier display-label aggregation and label filters.
+
+The `key` has the opaque shape `tool:<64 lowercase SHA-256 hex characters>`.
+Select the returned key with the `tool` query in v4; clients do not construct it
+from a displayed name. Identity and kind both participate in the group, so two
+rows with the same name can still select different evidence. Pagination binds
+the key, analytics version, snapshot and other filters. Each folded call keeps
+its last structured update as the evidence anchor, with that update's display
+title and Event kind. Calls retain explicit failed, pending, in-progress or
+unknown results; a missing result never becomes success.
+
+Identity absence preserves an earlier identity on the same Thread/call ID;
+an explicit null clears it. Coverage is Session-wide, even when activity or
+evidence selects a Thread. `unidentifiedToolCalls` includes older projections,
+unsupported or invalid source signals and identity cleared by upload redaction.
+It does not establish that tools were unused. An ordinary native tool can be
+identified here while remaining unclassified in the separate MCP/Skill report.
+Tool input/output and Raw data remain outside the analytics snapshot.
+
+| Source | Explicit identity extracted by the current Adapter |
+| --- | --- |
+| Claude sourceCapture | Native `tool_use.name`; valid `mcp__server__tool` becomes MCP server/name, and `Skill` with valid admitted `input.skill` becomes a Skill name |
+| Codex paged collection | Native `function_call`/`custom_tool_call` names; closed `CommandExecution`, `FileChange` and `ImageView` item types; native `McpToolCall` server/tool fields |
+| Other Adapters and unavailable historical sources | No ordinary tool name is inferred from command titles, tool text or input bodies |
+
+Adapters own this extraction. The existing upload preparation Module owns
+redaction; the Server owns folding, grouping and evidence selection. A copied
+identity keeps its admitted original field so field masking also clears the
+copy. Invalid or missing names remain unknown rather than being guessed from
+commands. File activity, cost and inferred task success are outside this
+increment. See [ADR-0124](architecture/adr/0124-stable-native-tool-identity.md).
+
 ## Recorded activity and range evidence
 
-Analytics version 3 requires an `activity` report. It selects every Thread or one
+Analytics versions 3 and 4 require an `activity` report. It selects every Thread or one
 Thread using `thread`; summary, tools, capabilities and usage still describe the
 full Session. Counts describe Canonical records, including fragments and tool
 updates, rather than inferred conversational turns.
@@ -43,7 +89,7 @@ updates, rather than inferred conversational turns.
 | --- | --- |
 | `scopeThreadId` | Selected Thread ID, or null for the complete Session |
 | `eventCount` | All Canonical Event records in that scope |
-| `recordedTimeEvents` | Non-null clocks under the explicit nullable Canonical v3/v4 contract |
+| `recordedTimeEvents` | Non-null clocks under the explicit nullable Canonical v3/v4/v5 contract |
 | `unknownTimeEvents` | Explicit null clocks, regardless of profile |
 | `legacyTimeEvents` | Other non-null clocks; retained as evidence but excluded from dated activity |
 | `firstRecordedAt`, `lastRecordedAt` | Earliest and latest recorded clocks, or null when there are none |
@@ -76,11 +122,12 @@ Event opens the existing conditional Reader target. Browser Back returns to the
 analysis view with its range, Thread and page selection. A full refresh clears
 range, cursor, snapshot and filters together.
 
-New Web requests v3 with the standard safelisted header
-`Accept: application/vnd.atape.session-analytics.v3+json, application/json`.
+New Web requests v4, then v3, with the standard safelisted header
+`Accept: application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json`.
 The response remains `application/json`, with `Vary: Accept` and `no-store`.
-Without a v3 opt-in, new Server retains v2 behavior and its cursor contract.
-Older Servers may ignore the vendor range and return v1/v2; Web shows existing
+Without opt-in, the Server retains v2 behavior and its cursor contract. A Server
+supporting v3 can return activity with the original label-based tool rows. Older
+Servers may ignore the vendor ranges and return v1/v2; Web shows existing
 statistics and explicitly marks activity unavailable. Missing activity is never
 presented as zero. This avoids a new custom-header CORS requirement for separate
 Web/API-origin deployments. See [ADR-0123](architecture/adr/0123-recorded-activity-ranges.md).
@@ -99,14 +146,13 @@ A completed Skill tool does not establish that the requested task succeeded.
 Unclassified calls include ordinary tools, old projections and unsupported
 source signals. Zero identified calls does not establish that no MCP or Skill
 was used. The Web accepts an older version-1 Server response and shows this
-report as unavailable; version-2 and version-3 responses must include it, even when empty.
+report as unavailable; version-2, version-3 and version-4 responses must include it, even when empty.
 Only distinct structured calls enter these counts. Older Events without a tool
 call ID remain separately disclosed by `unlinkedToolEvents`.
 
-| Source | Current normalized identity support |
-| --- | --- |
-| Claude sourceCapture | Explicit `mcp__server__tool` calls and `Skill` calls with a valid native `input.skill`; captured child Threads are included |
-| Other Adapters and old stored records | No normalized identity is inferred from display labels, text or tool input in the Server |
+Current source support is listed under [stable tool grouping](#stable-tool-grouping).
+Captured child Threads participate in both reports. Old stored v4 MCP/Skill
+facts remain usable; no Server request invents identities for old records.
 
 Claude command expansion and Codex `<skill>` message markers are not tool calls
 in this model and remain deferred. Reading `SKILL.md`, listing a skill directory
@@ -119,27 +165,34 @@ the copied fact is also cleared. Unrelated masked arguments retain public
 identity fields.
 Tool input/output remain excluded from the analytics snapshot and response.
 
-MCP/Skill projection acceptance uses constructed native-format records, the
+Earlier v4 MCP/Skill projection acceptance used constructed native-format records, the
 installed Adapter/CLI and real PostgreSQL/HTTP. The retained genuine Claude
 corpus verifies other capture behavior but contains no corresponding MCP or
 Skill invocation; a fresh recorded live invocation has not been validated.
+That earlier acceptance does not establish the new v5 capture transition.
 
-New Claude capture requires a Host that explicitly advertises Canonical v4 to
-the Adapter and a Server advertising publication target v4. Older Hosts/Servers
-refuse the unsupported path instead of dropping facts. Upgrade the Server and
-CLI/Adapter before using this capture revision. Old records acquire identities
-on a successful source replay, not from an analytics request. No frozen
-publication or Raw receipt is rewritten. See [the v4 ingestion contract](api/canonical-ingestion.md#v4-normalized-tool-identity)
-and [Claude upgrades](adapters/claude.md#recovery-and-upgrades).
+Current Claude capture requires explicit Host Canonical v5 support and a Server
+advertising publication target v5. Current Codex paged capture requires explicit
+Host and Server Canonical v5 support. The published 0.5.10 Server does not
+advertise either v5 path. Unsupported Hosts/Servers refuse before source reads
+or progress writes; they do not silently downgrade identities. Upgrade the
+Server and CLI/Adapter together when a supporting release is available.
 
-Newly frozen v4 source recovery metadata uses a v3-compatible closed field and
-an independent `canonicalProfileV4` fact. New readers normalize the effective
-profile to v4; genuine 0.5.8 SourceCollector recovery has been verified without
-source reads or rewriting frozen bytes. Actual target parts and comparison
-profiles remain v4. Immutable 0.5.8 active-Claude upgrade parents still reject
-the new manifest, so [the release transition](releases/v0.5.9.md#upgrade-and-recovery-boundaries)
-requires a stopped external CLI refresh. See
-[ADR-0121](architecture/adr/0121-tool-identity-release-transition.md).
+Available source history can replay with stable Event IDs and higher projection
+revisions. The new Codex cursor is v6; an older Adapter cannot read it. Recovery
+continues forward using a compatible runtime and retained progress, rather than
+deleting checkpoints. Claude's new projection similarly requires a compatible
+reader. Missing source history remains unidentified. Already frozen accepted
+publication bytes, manifests and Raw acknowledgements are never rewritten.
+See [the v5 ingestion contract](api/canonical-ingestion.md#v5-stable-native-tool-identity)
+and [the upgrade boundary](cli/setup-and-adapters.md#stable-native-tool-identity-checkout-increment).
+
+The earlier v4 source-metadata compatibility encoding and its genuine 0.5.8
+recovery evidence apply only to v4 captures. V5 recovery metadata carries explicit
+`atape.acp-centered.v5`; an old Host rejects it instead of treating it as v3/v4.
+No v5 rollback compatibility is established by the earlier
+[0.5.9 release transition](releases/v0.5.9.md#upgrade-and-recovery-boundaries)
+or [ADR-0121](architecture/adr/0121-tool-identity-release-transition.md).
 
 ## HTTP Interface
 
@@ -156,9 +209,10 @@ GET /api/v1/sessions/{sessionId}/analytics/evidence?snapshot={snapshot}&metric=f
 Both return the named `SessionAnalytics` representation in
 [OpenAPI](api/openapi-v1.yaml): `snapshot`, optional publication `head`,
 `analyticsVersion`, `sessionId`, `captureStatus`, `summary`, `tools`, `threads`,
-`usage`, version-2/3 `capabilities`, version-3 `activity` and `evidence`.
+`usage`, version-2/3/4 `capabilities`, version-3/4 `activity` and `evidence`, and
+version-4 stable tool rows and coverage.
 Collection fields are arrays, including when empty. The selected version is
-explicit in the body. All statistics except scoped v3 activity describe the full
+explicit in the body. All statistics except scoped v3/v4 activity describe the full
 selected Session; other filters only select evidence. Each tool evidence anchor is its last structured update. Thought and
 user-input evidence anchors identify the matching Canonical fragment; Thread
 evidence anchors identify the first stored Event in a captured child Thread.
@@ -166,10 +220,10 @@ evidence anchors identify the first stored Event in a captured child Thread.
 | Query | Contract |
 | --- | --- |
 | `snapshot` | Opaque conditional current-source token, at most 200 bytes; required on `/evidence` and when using `cursor` or `range` |
-| `metric` | `tools` (default), `failed_tools`, `unknown_tools`, `user_inputs`, `thoughts`, `threads`, `mcp_tools`, `skills`, or v3-only `records` |
+| `metric` | `tools` (default), `failed_tools`, `unknown_tools`, `user_inputs`, `thoughts`, `threads`, `mcp_tools`, `skills`, or v3/v4-only `records` |
 | `thread` | Select evidence and v3 activity from one captured Thread, at most 500 bytes |
-| `range` | V3-only opaque server interval or unplaced selection, at most 512 bytes; requires `records` and the same snapshot/Thread scope |
-| `tool` | Exact displayed tool label for one of the three tool metrics, at most 500 bytes |
+| `range` | V3/v4-only opaque server interval or unplaced selection, at most 512 bytes; requires `records` and the same snapshot/Thread scope |
+| `tool` | V4 returned group key; v1–v3 exact displayed label; only the three tool metrics, at most 500 bytes |
 | `capability` | Exact normalized name for `mcp_tools` or `skills`, at most 500 bytes |
 | `server` | Exact normalized server for `mcp_tools`, at most 500 bytes |
 | `cursor` | Opaque evidence continuation, at most 1024 bytes, bound to Session, snapshot, analytics version and filters |
@@ -181,7 +235,7 @@ Unknown, duplicate, empty or malformed query values fail with
 is invalid; `capability` requires `mcp_tools` or `skills`, and `server` requires
 `mcp_tools`. A server/name combination selects that MCP identity. All evidence
 filters, including server and capability, bind the cursor.
-V3 ranges also bind it. V3 evidence items require `clockQuality` as `recorded`,
+V3/v4 ranges also bind it. V3/v4 evidence items require `clockQuality` as `recorded`,
 `unknown` or `legacy`; `occurredAt` preserves the stored date or explicit null.
 `evidence.nextCursor` is absent at the end; continuation retains the same source
 token and filters. Each request rechecks authorization.
@@ -250,10 +304,12 @@ selected Canonical content require an explicit full refresh. Reloading analysis
 resets the metric to tools and clears Thread, tool, range, cursor and snapshot filters
 before reading the latest content, including when a previously selected item
 was removed. Tool labels over 500 UTF-8 bytes remain visible in full; individual
-label filtering is disabled, while metric and Thread filters remain available.
+label filtering is disabled on v1–v3, while metric and Thread filters remain
+available. V4 uses the bounded group key even when an MCP display name exceeds
+500 bytes.
 Returning to the conversation revalidates access without displaying cached
 content on failure and provides retry. Full refresh also clears capability and
-server selections. Remaining product work includes explicit identities from
+server selections. Remaining product work includes file activity, explicit identities from
 other Providers and non-tool Skill invocation signals. Measure real Session
 sizes and read latency before adding indexed facts
 or persisted derivation. Any future derived read model must bind

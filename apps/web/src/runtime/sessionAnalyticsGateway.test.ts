@@ -1,7 +1,7 @@
 import { readSessionAnalytics } from "@atape/application"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { activityFixture, analyticsFixture, capabilitiesFixture } from "../../test/sessionAnalyticsFixture"
+import { activityFixture, analyticsFixture, capabilitiesFixture, executeToolKey, stableToolsFixture } from "../../test/sessionAnalyticsFixture"
 import { BrowserSessionAnalyticsGatewayLayer } from "./sessionAnalyticsGateway"
 
 const run = <A, E>(effect: Effect.Effect<A, E, import("@atape/application").SessionAnalyticsGateway>) =>
@@ -18,7 +18,7 @@ describe("Session analytics browser Adapter", () => {
     expect(Object.fromEntries(url.searchParams)).toEqual({ snapshot: "snapshot-one", metric: "failed_tools", thread: "child/one", tool: "read & write", cursor: "opaque+=", limit: "20" })
     expect(result.usage.tokens).toMatchObject({ total: null, cacheRead: 0 })
     const headers = new Headers(fetchMock.mock.calls[0]![1]?.headers)
-    expect(headers.get("Accept")).toBe("application/vnd.atape.session-analytics.v3+json, application/json")
+    expect(headers.get("Accept")).toBe("application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
     expect(headers.has("ATape-Accept-Analytics-Version")).toBe(false)
   })
   it("reads v1 without inventing a capability report, and v2 with a required report", async () => {
@@ -51,6 +51,24 @@ describe("Session analytics browser Adapter", () => {
     expect(Object.fromEntries(url.searchParams)).toEqual({ metric: "records", range: "opaque+=range", snapshot: "snapshot-one", cursor: "record-page", limit: "4" })
     expect(report).toEqual(activityFixture)
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+  it("decodes v4 identity groups and sends the opaque row key rather than a command title", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(stableToolsFixture)))
+    vi.stubGlobal("fetch", fetchMock)
+    const result = await run(readSessionAnalytics("session-reader", { snapshot: "snapshot-one", metric: "tools", tool: executeToolKey }))
+    expect(result).toEqual(stableToolsFixture)
+    const url = new URL(fetchMock.mock.calls[0]![0] as string, "http://localhost")
+    expect(url.searchParams.get("tool")).toBe(executeToolKey)
+    expect(url.searchParams.get("tool")).not.toBe("Run pnpm check")
+  })
+  it("rejects v4 rows or coverage that omit required identity facts", async () => {
+    const { identity: _identity, ...missingIdentity } = stableToolsFixture.tools[0]!
+    const { identifiedToolCalls: _identified, ...missingCoverage } = stableToolsFixture.summary
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...stableToolsFixture, tools: [missingIdentity] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...stableToolsFixture, summary: missingCoverage }))))
+    expect(await run(readSessionAnalytics("session-reader").pipe(Effect.flip))).toMatchObject({ reason: "decode" })
+    expect(await run(readSessionAnalytics("session-reader").pipe(Effect.flip))).toMatchObject({ reason: "decode" })
   })
   it("rejects a v3 representation missing its required activity or clock quality", async () => {
     const { activity: _activity, ...missing } = activityFixture

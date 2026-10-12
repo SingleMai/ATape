@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
-import { activityFixture, analyticsFixture, capabilitiesFixture } from "../../test/sessionAnalyticsFixture"
+import { activityFixture, analyticsFixture, capabilitiesFixture, executeToolKey, literalUnknownToolFixture, stableToolsFixture, unknownToolKey } from "../../test/sessionAnalyticsFixture"
 import { initializeWebI18n } from "../i18n"
 import { SessionAnalyticsView } from "./SessionAnalyticsView"
 
@@ -35,6 +35,53 @@ describe("Session analysis view", () => {
     expect(html).toContain("This Server does not provide recorded activity yet.")
     expect(html).not.toContain("Record span")
     expect(html).not.toContain('value="records"')
+  })
+  it("shows native v4 identities, coverage, unknown groups and the original evidence titles", () => {
+    const html = renderToStaticMarkup(<SessionAnalyticsView {...props} state={{ _tag: "Ready", value: stableToolsFixture, refreshing: false }} />)
+    expect(html).toContain("Recorded tools")
+    expect(html).toContain("Calls with tool identity</dt><dd>2</dd>")
+    expect(html).toContain("Calls without tool identity</dt><dd>1</dd>")
+    expect(html).toContain("Command titles are never used to guess a tool name.")
+    expect(html).toContain("exec_command")
+    expect(html).toContain(`value="${executeToolKey}"`)
+    expect(html).toContain("Unknown · read · Unknown")
+    expect(html).toContain("Run pnpm check")
+    expect(html).toContain("Run rg --files")
+    expect(html).toContain("Record span</dt><dd>2 min")
+    expect(html).not.toContain("Tool call labels")
+    expect(html).not.toContain('value="Run pnpm check"')
+  })
+  it("retains a long MCP native identity as a selectable v4 group", () => {
+    const name = `${"界".repeat(166)}/${"界".repeat(166)}`
+    const tool = { ...stableToolsFixture.tools[0]!, name, identity: { type: "mcp" as const, server: "界".repeat(166), name: "界".repeat(166) } }
+    const html = renderToStaticMarkup(<SessionAnalyticsView {...props} state={{ _tag: "Ready", value: { ...stableToolsFixture, tools: [tool] }, refreshing: false }} />)
+    expect(html).toContain(name)
+    expect(html).toContain(`value="${executeToolKey}"`)
+    expect(html).not.toContain("Some labels exceed the filter length limit")
+    expect(html).toContain(`class="analytics-link">${name}</button>`)
+  })
+  it.each(["tool", "skill"] as const)("preserves a literal unknown %s name beside a null identity of the same kind", identityType => {
+    initializeWebI18n("zh-CN")
+    const value = literalUnknownToolFixture(identityType)
+    const html = renderToStaticMarkup(<SessionAnalyticsView {...props} query={{ metric: "tools", tool: executeToolKey }}
+      state={{ _tag: "Ready", value, refreshing: false }} />)
+    expect(html).toContain('class="analytics-link">unknown</button>')
+    expect(html).toContain('class="analytics-link">未知</button>')
+    expect(html).toContain(`value="${executeToolKey}" selected="">unknown · execute · ${identityType === "tool" ? "工具" : "Skill"}</option>`)
+    expect(html).toContain(`value="${unknownToolKey}">未知 · execute · 未知</option>`)
+    expect(html).toContain('aria-label="失败调用：unknown"')
+    expect(html).toContain('aria-label="失败调用：未知"')
+    expect(html).toContain('aria-label="状态未知调用：unknown"')
+    expect(html).toContain('aria-label="状态未知调用：未知"')
+    initializeWebI18n("en")
+  })
+  it("retains the old localized unknown label in a v3 report without identity semantics", () => {
+    initializeWebI18n("zh-CN")
+    const html = renderToStaticMarkup(<SessionAnalyticsView {...props}
+      state={{ _tag: "Ready", value: { ...activityFixture, tools: [{ ...activityFixture.tools[0]!, name: "unknown" }] }, refreshing: false }} />)
+    expect(html).toContain('class="analytics-link">未知</button>')
+    expect(html).not.toContain('class="analytics-link">unknown</button>')
+    initializeWebI18n("en")
   })
   it("displays the Server's span, exact ranges and clock quality while retaining v2 capability reports", () => {
     const html = renderToStaticMarkup(<SessionAnalyticsView {...props} query={{ metric: "records", range: "opaque-first-bucket" }}

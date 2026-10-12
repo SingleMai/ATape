@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -139,10 +140,32 @@ func (h *Handler) projectSearch(response http.ResponseWriter, request *http.Requ
 }
 
 func (h *Handler) canonicalCapabilities(response http.ResponseWriter, request *http.Request) {
+	appendVary(response.Header(), "ATape-Accept-Canonical-Profile")
 	if _, ok := strictQuery(response, request); !ok {
 		return
 	}
-	writeJSON(response, request, http.StatusOK, h.ingestor.Capabilities())
+	writeJSON(response, request, http.StatusOK, negotiatedCanonicalCapabilities(h.ingestor.Capabilities(), request.Header.Values("ATape-Accept-Canonical-Profile")))
+}
+
+// Published Hosts decode a closed v2/v3/v4 list. Advertising a newer profile
+// requires explicit opt-in without changing their existing affirmative proof.
+func negotiatedCanonicalCapabilities(capabilities ingestion.Capabilities, accepted []string) ingestion.Capabilities {
+	allowV5 := false
+	for _, field := range accepted {
+		for _, token := range strings.Split(field, ",") {
+			if strings.TrimSpace(token) == ingestion.StableToolCanonicalProfileVersion {
+				allowV5 = true
+			}
+		}
+	}
+	selected := make([]string, 0, len(capabilities.CanonicalProfiles))
+	for _, profile := range capabilities.CanonicalProfiles {
+		if profile == ingestion.CanonicalProfileVersion || profile == ingestion.UnknownTimeCanonicalProfileVersion || profile == ingestion.ToolIdentityCanonicalProfileVersion || allowV5 && profile == ingestion.StableToolCanonicalProfileVersion {
+			selected = append(selected, profile)
+		}
+	}
+	capabilities.CanonicalProfiles = selected
+	return capabilities
 }
 
 func (h *Handler) canonicalBatch(response http.ResponseWriter, request *http.Request) {

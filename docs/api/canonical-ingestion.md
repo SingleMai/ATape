@@ -19,7 +19,8 @@ the batch.
 
 The `atape.canonical.v1` transport accepts `atape.acp-centered.v1`,
 `atape.acp-centered.v2`, explicit-unknown-time `atape.acp-centered.v3`, and
-normalized-tool-identity `atape.acp-centered.v4` profiles. It accepts the shared
+normalized-MCP/Skill-identity `atape.acp-centered.v4` profiles, plus
+stable-native-tool-identity `atape.acp-centered.v5` in this checkout. It accepts the shared
 event kinds `message`, `thought`, `tool_call`, `tool_result`, `artifact`,
 `spawn`, and `lifecycle`. Extension kinds remain closed until the protocol
 carries an explicit extension schema and version.
@@ -29,7 +30,11 @@ carries an explicit extension schema and version.
 `GET /api/v1/ingestion/canonical/capabilities` requires a CLI Credential and
 returns `Cache-Control: no-store`. Its `atape.canonical-capabilities.v1`
 representation includes a nonempty, unique `canonicalProfiles` list of modern
-v2/v3/v4 profiles. This describes direct ingestion independently of Publication;
+v2/v3/v4 profiles by default, preserving the published 0.5.10 CLI's decoder.
+A caller opting in with `ATape-Accept-Canonical-Profile: atape.acp-centered.v5`
+can additionally discover v5 on a supporting Server. Unknown header tokens are
+ignored; affirmative v5 advertisement is required before a v5 capture begins.
+This describes direct ingestion independently of Publication;
 legacy v1 remains a historical write-compatibility path, not a discovery target.
 Query parameters are invalid.
 
@@ -255,14 +260,62 @@ The full tool update retains its existing byte/depth/node limits. Identity
 travels with tool details in Canonical storage and publication hashes; there is
 no separate identity table, Raw read or database migration.
 
-Source-capture targets require `atape.publication-target.v4`, advertised only
-for requests opting in with `ATape-Accept-Publication-Target`. The Host requests
-v3 and v4 together; the old v3-only opt-in still receives its original profiles.
+V4 source-capture targets require `atape.publication-target.v4`, advertised only
+for requests opting in with `ATape-Accept-Publication-Target`. A v3/v4 opt-in
+retains its original profiles; the old v3-only opt-in also keeps its original
+response. The current Host additionally opts into v5 as described below.
 Every part's Canonical profile must agree with the frozen target profile.
-The new Claude Adapter declares a static v4 minimum and checks the Host's
+An Adapter selecting v4 checks the Host's
 `projection.canonicalProfiles` before opening source bytes. Unsupported Hosts
 and Servers refuse the path explicitly. See [Session Analytics](../session-analytics.md)
 and [ADR-0120](../architecture/adr/0120-normalized-tool-identity.md).
+
+## v5 stable native tool identity
+
+V5 retains v4's nullable source clocks and MCP/Skill identities, adding
+`{"type":"tool","name":"native-name"}` to the same closed namespace:
+
+```json
+{
+  "sessionUpdate": "tool_call_update",
+  "toolCallId": "exec-1",
+  "title": "Run pnpm check",
+  "kind": "execute",
+  "_meta": {"atape.dev/tool-identity": {"type": "tool", "name": "exec_command"}}
+}
+```
+
+The native name comes from an explicit source field or a closed native item
+type in the Adapter. Command titles and input bodies are not classified in the
+Server. The same 500-byte, trimmed, well-formed Unicode bounds and copied-fact
+redaction rules apply. An absent namespace preserves the preceding identity on
+the same Thread/call ID; explicit null clears it. V4 continues accepting only
+MCP/Skill identities and rejects `type: "tool"`; v1/v2/v3 continue rejecting
+`_meta` entirely. Tool details retain their existing bounded Interface.
+
+Direct v5 ingestion requires the Host and Server to affirm Canonical v5. The
+Codex paged Adapter declares `legacyCanonicalProfile: "atape.acp-centered.v5"`.
+Its factory checks explicit local Host support, and collection checks Server
+discovery before source reads or checkpoint changes. A missing capabilities
+endpoint cannot establish v5 support through the older v3 fallback.
+
+V5 source-capture requires `atape.publication-target.v5`; only callers opting in
+with `ATape-Accept-Publication-Target` can discover it. The new Host requests
+v3/v4/v5 together. The Claude Adapter declares the static v5 minimum, checks the
+Host's `projection.canonicalProfiles` and uses v5 for its complete target.
+Each part's Canonical profile must match that frozen publication profile.
+There is no silent v4 downgrade or new SQL migration.
+
+This is checkout implementation, not a published or deployed version. The
+published 0.5.10 Server does not advertise v5. Deploy a supporting Server and
+update CLI/Adapters together before starting this revision. Available history
+can replay into new revisions with stable identities; frozen accepted bytes and
+Raw receipts are retained. V5 frozen source metadata carries explicit v5 and
+is unreadable by old Hosts, rather than using v4's earlier compatible encoding.
+Recover forward with the supporting runtime. See
+[Session Analytics](../session-analytics.md#stable-tool-grouping),
+[upgrades](../cli/setup-and-adapters.md#stable-native-tool-identity-checkout-increment)
+and [ADR-0124](../architecture/adr/0124-stable-native-tool-identity.md).
 
 ## Structured usage
 

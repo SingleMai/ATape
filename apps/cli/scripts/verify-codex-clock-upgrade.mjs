@@ -60,7 +60,9 @@ export async function verifyCodexClockUpgrade(releaseDirectory, fixtureDirectory
     publicPackages[name] = { archive, manifest: { ...manifest, dist: { integrity: integrity(bytes),
       tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz` } } }
   }
-  assert.equal(publicPackages["@atape/adapter-codex"].manifest.atapeAdapter.legacyCanonicalProfile, "atape.acp-centered.v3")
+  const candidateProfile = publicPackages["@atape/adapter-codex"].manifest.atapeAdapter.legacyCanonicalProfile
+  assert.ok(["atape.acp-centered.v3", "atape.acp-centered.v5"].includes(candidateProfile), "Clock transition requires an explicitly admitted nullable-clock profile")
+  const candidateProjection = candidateProfile === "atape.acp-centered.v5" ? 6 : 5
   const cliManifest = publicPackages["@atape/cli"].manifest
   const bundle = { protocol: "atape.release-bundle.v2", version, captureStateContract: cliManifest.atapeRuntime.stateContract,
     updateControlProtocol: cliManifest.atapeRuntime.updateControlProtocol, migration: cliManifest.atapeRuntime.captureMigration,
@@ -121,13 +123,16 @@ globalThis.fetch=async (input,init)=> {
   if(path==="/api/v1/instance")return Response.json({protocol:"atape.instance.v1",instance_origin:url.origin,web_origin:url.origin,api_origin:url.origin,
    protocols:["atape-cli.v1"],release_version:fixture.serverVersion,auth_epoch:"auth-v1",minimum_cli_version:fixture.minimumCLIVersion});
   if(new Headers(init?.headers).get("authorization")!=="Bearer atc_v1_synthetic_upgrade_credential")throw Error("Fixture Server requires the installed credential");
-  if(path==="/api/v1/ingestion/canonical/capabilities")return Response.json({protocol:"atape.canonical-capabilities.v1",canonicalProfiles:["atape.acp-centered.v2","atape.acp-centered.v3","atape.acp-centered.v4"]});
+  if(path==="/api/v1/ingestion/canonical/capabilities") {
+   const requested=(new Headers(init?.headers).get("ATape-Accept-Canonical-Profile")??"").split(",").map(item=>item.trim());
+   return Response.json({protocol:"atape.canonical-capabilities.v1",canonicalProfiles:["atape.acp-centered.v2","atape.acp-centered.v3","atape.acp-centered.v4",...(requested.includes("atape.acp-centered.v5")?["atape.acp-centered.v5"]:[])]});
+  }
   if(path==="/api/v1/publications/capabilities")return Response.json({status:503,code:"unavailable"},{status:503});
   if(path==="/api/v1/projects/upgrade-project/raw-capture")return Response.json({teamPolicy:"personal",userPreference:"enable",enabled:true});
   if(path==="/api/v1/users/me")return Response.json({id:"upgrade-user",displayName:"Upgrade fixture"});
   if(path==="/api/v1/ingestion/canonical/batches") {
    const body=JSON.parse(init.body);
-   if(!["atape.acp-centered.v2","atape.acp-centered.v3","atape.acp-centered.v4"].includes(body.canonicalProfileVersion))throw Error("Unsupported Canonical profile");
+   if(!["atape.acp-centered.v2","atape.acp-centered.v3","atape.acp-centered.v4","atape.acp-centered.v5"].includes(body.canonicalProfileVersion))throw Error("Unsupported Canonical profile");
    if(body.canonicalProfileVersion==="atape.acp-centered.v2"&&(body.session.updatedAt===null||body.events.some(event=>event.occurredAt===null)))throw Error("Legacy v2 cannot claim nullable clocks");
    appendFileSync(${JSON.stringify(captures)},JSON.stringify(body)+"\n");
    return Response.json({sessionId:"s_clock_fixture",sessionCreated:saved(${JSON.stringify(captures)}).length===1,insertedEvents:body.events.length,updatedEvents:0,unchangedEvents:0,staleEvents:0,replayed:false},{status:201});
@@ -268,14 +273,14 @@ else if(args[0]==="install") {
     const captureCount=(await captured(captures)).length
     await collect()
     const replay=await invoke("snapshot"), corrected=(await captured(captures)).slice(captureCount)
-    assert.ok(corrected.length>0);assert.ok(corrected.every(batch=>batch.canonicalProfileVersion==="atape.acp-centered.v3"))
+    assert.ok(corrected.length>0);assert.ok(corrected.every(batch=>batch.canonicalProfileVersion===candidateProfile))
     const newEvents=corrected.flatMap(batch=>batch.events)
     assert.deepEqual(new Set(newEvents.map(event=>event.sourceEventId)),new Set(oldEvents.map(event=>event.sourceEventId)))
-    for(const event of newEvents){assert.equal(event.projectionRevision,5);assert.ok(event.revision>oldEvents.find(old=>old.sourceEventId===event.sourceEventId).revision)}
+    for(const event of newEvents){assert.equal(event.projectionRevision,candidateProjection);assert.ok(event.revision>oldEvents.find(old=>old.sourceEventId===event.sourceEventId).revision)}
     assert.equal(newEvents.find(event=>event.sourceEventId==="clock-unknown").occurredAt,null)
     assert.equal(corrected[0].session.updatedAt,"2026-10-11T00:00:02Z")
     assert.deepEqual(replay.state.checkpoint.rawObjects,oldRawObjects);assert.deepEqual(await readFile(rawCaptures),rawBefore)
-    assert.equal(JSON.parse(Buffer.from(replay.state.checkpoint.cursor,"base64url").toString("utf8")).eventProjectionVersion,5)
+    assert.equal(JSON.parse(Buffer.from(replay.state.checkpoint.cursor,"base64url").toString("utf8")).eventProjectionVersion,candidateProjection)
     assert.equal(replay.wanted,false);assert.equal(replay.status.running,false)
     const beforeNoOp=(await captured(captures)).length
     await collect();assert.equal((await captured(captures)).length,beforeNoOp)
@@ -294,8 +299,8 @@ else if(args[0]==="install") {
     const oldCheck=join(root,"old-adapter-caller.mjs")
     const oldRequest={protocolVersion:"atape.adapter.v1alpha1",cursor:continued.state.checkpoint.cursor,
       rawProgress:continued.state.checkpoint.rawObjects,limits:AdapterCollectionLimits,rawCaptureEnabled:true}
-    await writeFile(oldCheck,`import assert from "node:assert/strict";\nimport { createAtapeAdapter } from ${JSON.stringify(pathToFileURL(join(retained,"node_modules","@atape","adapter-codex","dist","index.js")).href)};\nconst runtime=await createAtapeAdapter({protocolVersion:"atape.adapter.v1alpha1",adapter:{id:"codex",version:"0.5.9"},project:{id:"upgrade-project",type:"directory",path:${JSON.stringify(join(root,"workspace"))}},signal:AbortSignal.timeout(5000)});\ntry{await assert.rejects(runtime.collect({...${JSON.stringify(oldRequest)},signal:AbortSignal.timeout(5000)}),error=>error.reason==="cursor"&&/cursor is invalid/i.test(error.message));process.stdout.write("old-adapter-refused-v5");}finally{await runtime.close?.()}\n`)
-    assert.equal((await execute(process.execPath,[oldCheck],{cwd:root,env:environment,encoding:"utf8",timeout:15_000,maxBuffer:1024*1024})).stdout,"old-adapter-refused-v5")
+    await writeFile(oldCheck,`import assert from "node:assert/strict";\nimport { createAtapeAdapter } from ${JSON.stringify(pathToFileURL(join(retained,"node_modules","@atape","adapter-codex","dist","index.js")).href)};\nconst runtime=await createAtapeAdapter({protocolVersion:"atape.adapter.v1alpha1",adapter:{id:"codex",version:"0.5.9"},project:{id:"upgrade-project",type:"directory",path:${JSON.stringify(join(root,"workspace"))}},signal:AbortSignal.timeout(5000)});\ntry{await assert.rejects(runtime.collect({...${JSON.stringify(oldRequest)},signal:AbortSignal.timeout(5000)}),error=>error.reason==="cursor"&&/cursor is invalid/i.test(error.message));process.stdout.write("old-adapter-refused-v${candidateProjection}");}finally{await runtime.close?.()}\n`)
+    assert.equal((await execute(process.execPath,[oldCheck],{cwd:root,env:environment,encoding:"utf8",timeout:15_000,maxBuffer:1024*1024})).stdout,`old-adapter-refused-v${candidateProjection}`)
     await unchanged(credentialBefore); assert.equal(await optionalBytes(native),undefined)
     const record={baselineVersion:"0.5.9",baselineIntegrities:codexClockBaselineIntegrities,baselineEntrySha256:entryHash,
       candidateVersion:version,candidateEntrySha256:candidateEntryHash,candidateCLIIntegrity:publicPackages["@atape/cli"].manifest.dist.integrity,
@@ -303,11 +308,12 @@ else if(args[0]==="install") {
       genuineOldAutomaticRejectedBeforePause:true,genuineOldUIRejectedBeforePause:true,genuineOldCollectorCapturedProjection4:true,
       installedStoppedWholeBundleMenuCompleted:true,stopIntentPreserved:true,projectsAndToolsPreserved:true,credentialBytesPreserved:true,
       checkpointBytesPreservedAtSelection:true,rawReceiptsPreservedAcrossReplay:true,explicitNullReplayed:true,eventIDsPreserved:true,
-      revisionsAdvanced:true,noOpContinuationPassed:true,appendedContinuationPassed:true,genuineOldAdapterRejectedProjection5:true,
+      revisionsAdvanced:true,noOpContinuationPassed:true,appendedContinuationPassed:true,[`genuineOldAdapterRejectedProjection${candidateProjection}`]:true,
+      candidateCanonicalProfile:candidateProfile,candidateProjectionVersion:candidateProjection,
       installedCandidateDaemonCycles:3,upgradeServerRelease:version,upgradeServerMinimumCLI:version,
       readerFloor:control.floor,retainedRuntimeRollbackAfterNewCursor:"unsupported; recover forward with target runtime",
       providerCaptureTested:"constructed native-format source through genuine installed readers",realOSRegistrationTested:false,
-      server:"owned HTTP Test Adapter for Canonical v2/v3/v4 and Raw; Publication unavailable; no deployed Instance touched"}
+      server:"owned HTTP Test Adapter for Canonical v2/v3/v4/v5 and Raw; Publication unavailable; no deployed Instance touched"}
     await writeFile(join(root,"codex-clock-upgrade-acceptance.json"),JSON.stringify(record,null,2)+"\n",{mode:0o600})
     return record
   } finally {await invoke("cleanup")}

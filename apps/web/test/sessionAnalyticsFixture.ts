@@ -50,3 +50,39 @@ export const activityFixture: Extract<SessionAnalytics, { analyticsVersion: 3 }>
     { eventId: "legacy-event", threadId: "root", kind: "message", label: "Legacy event", occurredAt: "1970-01-01T00:00:00Z", clockQuality: "legacy" }
   ], nextCursor: "opaque-record-page" }
 }
+
+export const executeToolKey = `tool:${"a".repeat(64)}`
+export const unknownToolKey = `tool:${"b".repeat(64)}`
+export const stableToolsFixture: Extract<SessionAnalytics, { analyticsVersion: 4 }> = {
+  ...activityFixture, analyticsVersion: 4,
+  summary: { ...activityFixture.summary, toolCalls: 3, identifiedToolCalls: 2, unidentifiedToolCalls: 1 },
+  capabilities: { mcpCalls: 0, skillCalls: 0, unclassifiedCalls: 3, mcp: [], skills: [] },
+  threads: activityFixture.threads.map(thread => ({ ...thread, toolCalls: thread.id === "root" ? 2 : 1 })),
+  tools: [
+    { key: executeToolKey, identity: { type: "tool", name: "exec_command" }, name: "exec_command", kind: "execute",
+      calls: 2, completed: 0, failed: 1, pending: 0, inProgress: 0, unknown: 1 },
+    { key: unknownToolKey, identity: null, name: "unknown", kind: "read", calls: 1,
+      completed: 0, failed: 0, pending: 1, inProgress: 0, unknown: 0 }
+  ],
+  evidence: { items: [
+    { eventId: "tool-1", threadId: "root", kind: "tool_call", label: "Run pnpm check", occurredAt: null, clockQuality: "unknown" },
+    { eventId: "tool-2", threadId: "child", kind: "tool_result", label: "Run rg --files", occurredAt: "2026-10-12T00:00:00Z", clockQuality: "recorded" }
+  ], nextCursor: "stable-tools-next" }
+}
+
+export const literalUnknownToolFixture = (identityType: "tool" | "skill"): Extract<SessionAnalytics, { analyticsVersion: 4 }> => ({
+  ...stableToolsFixture,
+  summary: { ...stableToolsFixture.summary, toolCalls: 2, identifiedToolCalls: 1, unidentifiedToolCalls: 1 },
+  threads: stableToolsFixture.threads.map(thread => ({ ...thread, toolCalls: thread.id === "root" ? 2 : 0 })),
+  capabilities: { mcpCalls: 0, skillCalls: identityType === "skill" ? 1 : 0, unclassifiedCalls: identityType === "skill" ? 1 : 2, mcp: [],
+    skills: identityType === "skill" ? [{ name: "unknown", calls: 1, completed: 0, failed: 0, pending: 0, inProgress: 0, unknown: 1 }] : [] },
+  tools: [
+    { ...stableToolsFixture.tools[0]!, name: "unknown", identity: { type: identityType, name: "unknown" },
+      calls: 1, completed: 0, failed: 0, pending: 0, inProgress: 0, unknown: 1 },
+    { ...stableToolsFixture.tools[1]!, kind: "execute" }
+  ],
+  evidence: { items: [
+    { eventId: "literal-unknown", threadId: "root", kind: "tool_call", label: "Literal unknown native call", occurredAt: null, clockQuality: "unknown" },
+    { eventId: "missing-identity", threadId: "root", kind: "tool_call", label: "Call without identity", occurredAt: null, clockQuality: "unknown" }
+  ] }
+})

@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import { CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, ToolIdentityMetaKey, type AcpContentBlock, type AcpToolIdentity, type AdapterObservation } from "@atape/domain"
+import { CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion5, ToolIdentityMetaKey, type AcpContentBlock, type AcpToolIdentity, type AdapterObservation } from "@atape/domain"
 import { compileRedactionPolicy, makeRedactionLayer, validateRedactionConfiguration, type RedactionPattern } from "./redaction.ts"
 import { prepareCanonicalSlice, prepareCollectedObservation } from "./collectorPreparation.ts"
 import { rawSourceRecord } from "./rawPreparation.ts"
@@ -36,6 +36,37 @@ describe("Redaction Module", () => {
       expect(result.observation.events[0]!.update).toHaveProperty("_meta", { [ToolIdentityMetaKey]: identity })
       expect(result.replacements).toBe(0)
     })
+  it.each([CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4])(
+    "rejects native tool identity under %s before redaction", async profile => {
+      const policy = await compile()
+      await expect(Effect.runPromise(prepareCanonicalSlice("fixture", identityObservation({ type: "tool", name: "exec_command" }), profile)
+        .pipe(Effect.provide(makeRedactionLayer(policy))))).rejects.toMatchObject({ _tag: "CollectionContractError" })
+    })
+  it("retains a native tool name while masking unrelated command arguments", async () => {
+    const policy = await compile([], ["private-command-argument"])
+    const initial = identityObservation({ type: "tool", name: "CommandExecution" })
+    const event = initial.events[0]!
+    const input = { ...initial, events: [{ ...event, update: { ...event.update, title: "echo private-command-argument" } }] }
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", input, CanonicalProfileVersion5)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).toHaveProperty("_meta", { [ToolIdentityMetaKey]: { type: "tool", name: "CommandExecution" } })
+    expect(JSON.stringify(result.observation)).not.toContain("private-command-argument")
+  })
+  it.each([
+    { patterns: [], secrets: ["private-native-tool"], source: undefined },
+    { patterns: [{ name: "identity field", type: "local", field_pattern: "^name$" }], secrets: [], source: undefined },
+    { patterns: [{ name: "copied source", type: "local", field_pattern: "^native_name$" }], secrets: [], source: { native_name: "private-native-tool" } }
+  ])("clears masked native identities and copied source facts (%#)", async ({ patterns, secrets, source }) => {
+    const policy = await compile(patterns, secrets)
+    const initial = identityObservation({ type: "tool", name: "private-native-tool" }), event = initial.events[0]!
+    const input = { ...initial, events: [{ ...event, update: { ...event.update,
+      ...(source === undefined ? {} : { rawInput: source }) } }] }
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", input, CanonicalProfileVersion5)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).toHaveProperty("_meta", { [ToolIdentityMetaKey]: null })
+    expect(result.observation.events[0]!.fidelity).toBe("redacted")
+    expect(JSON.stringify(result.observation)).not.toContain("private-native-tool")
+  })
   it.each([
     { patterns: [], secrets: ["private-server"], identity: { type: "mcp", server: "private-server", name: "read" } },
     { patterns: [{ name: "name field", type: "local", field_pattern: "^name$" }], secrets: [], identity: { type: "skill", name: "review" } },
@@ -99,6 +130,48 @@ describe("Redaction Module", () => {
     expect(result.observation.events[0]!.update).toHaveProperty("_meta", { [ToolIdentityMetaKey]: identity })
     expect(result.observation.events[0]!.update).toHaveProperty("rawInput", { token: "[REDACTED]", server: "docs", tool: "read" })
     expect(JSON.stringify(result.observation)).not.toContain("private-token")
+  })
+  it("masks a copied MCP display title when its original tool field is hidden", async () => {
+    const policy = await compile([{ name: "tool source", type: "local", field_pattern: "^tool$" }])
+    const initial = identityObservation({ type: "mcp", server: "docs", name: "private-tool" }), event = initial.events[0]!
+    const input = { ...initial, events: [{ ...event, update: { ...event.update, title: "docs/private-tool",
+      rawInput: { server: "docs", tool: "private-tool" } } }] }
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", input, CanonicalProfileVersion5)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).toMatchObject({ title: "docs/[REDACTED]", _meta: { [ToolIdentityMetaKey]: null } })
+    expect(JSON.stringify(result.observation)).not.toContain("private-tool")
+  })
+  it("masks a copied native title when metadata name is hidden", async () => {
+    const policy = await compile([{ name: "identity name", type: "local", field_pattern: "^name$" }])
+    const initial = identityObservation({ type: "tool", name: "private-native-tool" }), event = initial.events[0]!
+    const input = { ...initial, events: [{ ...event, update: { ...event.update, title: "private-native-tool" } }] }
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", input, CanonicalProfileVersion5)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).toMatchObject({ title: "[REDACTED]", _meta: { [ToolIdentityMetaKey]: null } })
+    expect(JSON.stringify(result.observation)).not.toContain("private-native-tool")
+  })
+  it.each(["private-tool-" + "x".repeat(487), "私".repeat(166)])(
+    "masks bounded titles retaining only a hidden name prefix (%#)", async name => {
+      const policy = await compile([{ name: "tool source", type: "local", field_pattern: "^tool$" }])
+      let bounded = ""
+      for (const character of `docs/${name}`) {
+        if (new TextEncoder().encode(bounded + character).byteLength > 500) break
+        bounded += character
+      }
+      const initial = identityObservation({ type: "mcp", server: "docs", name }), event = initial.events[0]!
+      const input = { ...initial, events: [{ ...event, update: { ...event.update, title: bounded,
+        rawInput: { server: "docs", tool: name } } }] }
+      const result = await Effect.runPromise(prepareCanonicalSlice("fixture", input, CanonicalProfileVersion5)
+        .pipe(Effect.provide(makeRedactionLayer(policy))))
+      expect(result.observation.events[0]!.update).toMatchObject({ title: "[REDACTED]", _meta: { [ToolIdentityMetaKey]: null } })
+    })
+  it("retains a public name title when only the identity category is masked", async () => {
+    const policy = await compile([{ name: "identity category", type: "local", field_pattern: "^type$" }])
+    const initial = identityObservation({ type: "tool", name: "exec_command" }), event = initial.events[0]!
+    const input = { ...initial, events: [{ ...event, update: { ...event.update, title: "exec_command" } }] }
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", input, CanonicalProfileVersion5)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).toMatchObject({ title: "exec_command", _meta: { [ToolIdentityMetaKey]: null } })
   })
   it("compares a copied complete JSON string without exposing its masked contents", async () => {
     const source = '{"skill":"private-workflow"}'
