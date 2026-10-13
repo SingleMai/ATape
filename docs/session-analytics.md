@@ -196,7 +196,7 @@ See [ADR-0125](architecture/adr/0125-recorded-file-activity.md).
 
 ## Recorded activity and range evidence
 
-Analytics versions 3 and 4 require an `activity` report. It selects every Thread or one
+Analytics versions 3, 4 and 5 require an `activity` report. It selects every Thread or one
 Thread using `thread`; summary, tools, capabilities and usage still describe the
 full Session. Counts describe Canonical records, including fragments and tool
 updates, rather than inferred conversational turns.
@@ -238,8 +238,8 @@ Event opens the existing conditional Reader target. Browser Back returns to the
 analysis view with its range, Thread and page selection. A full refresh clears
 range, cursor, snapshot and filters together.
 
-New Web requests v4, then v3, with the standard safelisted header
-`Accept: application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json`.
+New Web requests v5, then v4 and v3, with the standard safelisted header
+`Accept: application/vnd.atape.session-analytics.v5+json, application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json`.
 The response remains `application/json`, with `Vary: Accept` and `no-store`.
 Without opt-in, the Server retains v2 behavior and its cursor contract. A Server
 supporting v3 can return activity with the original label-based tool rows. Older
@@ -262,7 +262,7 @@ A completed Skill tool does not establish that the requested task succeeded.
 Unclassified calls include ordinary tools, old projections and unsupported
 source signals. Zero identified calls does not establish that no MCP or Skill
 was used. The Web accepts an older version-1 Server response and shows this
-report as unavailable; version-2, version-3 and version-4 responses must include it, even when empty.
+report as unavailable; version-2 through version-5 responses must include it, even when empty.
 Only distinct structured calls enter these counts. Older Events without a tool
 call ID remain separately disclosed by `unlinkedToolEvents`.
 
@@ -329,11 +329,13 @@ GET /api/v1/sessions/{sessionId}/analytics/evidence?snapshot={snapshot}&metric=f
 Both return the named `SessionAnalytics` representation in
 [OpenAPI](api/openapi-v1.yaml): `snapshot`, optional publication `head`,
 `analyticsVersion`, `sessionId`, `captureStatus`, `summary`, `tools`, `threads`,
-`usage`, version-2/3/4 `capabilities`, version-3/4 `activity` and `evidence`, and
-version-4 stable tool rows, coverage and required `fileActivity`.
+`usage`, version-2 through version-5 `capabilities`, version-3 through version-5
+`activity` and clock-quality evidence, version-4/5 stable tool rows and
+`fileActivity`, and version-5 `tokenActivity`.
 Collection fields are arrays, including when empty. The selected version is
-explicit in the body. All statistics except scoped v3/v4 activity describe the full
-selected Session; other filters only select evidence. Each tool evidence anchor is its last structured update. Thought and
+explicit in the body. Statistics describe the full selected Session except for
+scoped recorded activity and v5 Token distribution. Thread and model select
+Token scope; other filters select evidence. Each tool evidence anchor is its last structured update. Thought and
 user-input evidence anchors identify the matching Canonical fragment; Thread
 evidence anchors identify the first stored Event in a captured child Thread.
 
@@ -428,7 +430,8 @@ this acceptance entered the Reader directly and does not validate that sidebar.
 The Web view handles loading, failure, manual refresh and evidence navigation;
 it preserves analysis state when returning from the reader. Changes to the
 selected Canonical content require an explicit full refresh. Reloading analysis
-resets the metric to tools and clears Thread, tool, range, cursor and snapshot filters
+resets the metric to tools and clears Thread, model, tool, range, Token range,
+cursor and snapshot filters
 before reading the latest content, including when a previously selected item
 was removed. Tool labels over 500 UTF-8 bytes remain visible in full; individual
 label filtering is disabled on v1–v3, while metric and Thread filters remain
