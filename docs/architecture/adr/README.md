@@ -152,6 +152,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0124](0124-stable-native-tool-identity.md) | Stable native tool identity and Analytics v4 |
 | [0125](0125-recorded-file-activity.md) | Recorded file activity and conditional evidence |
 | [0126](0126-target-owned-managed-updates.md) | Target-owned managed update preparation and recovery |
+| [0127](0127-recorded-token-activity.md) | Recorded Token activity and interval evidence |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

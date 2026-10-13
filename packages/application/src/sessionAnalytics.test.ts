@@ -20,6 +20,14 @@ const emptyFileActivity = { callsWithActivity: 0, callsWithoutActivity: 0, uniqu
 const fileKey = `file:${"a".repeat(64)}`
 const fileValue: Extract<SessionAnalytics, { analyticsVersion: 4 }> = { ...activityValue, analyticsVersion: 4,
   summary: { ...value.summary, identifiedToolCalls: 0, unidentifiedToolCalls: 0 }, tools: [], fileActivity: emptyFileActivity }
+const modelKey = `model:${"b".repeat(64)}`
+const emptyCounter = { knownSubtotal: null, reportedSamples: 0, missingSamples: 0, overflowed: false }
+const emptyTokens = { total: emptyCounter, input: emptyCounter, output: emptyCounter, cacheRead: emptyCounter, cacheWrite: emptyCounter }
+const tokenValue: Extract<SessionAnalytics, { analyticsVersion: 5 }> = { ...fileValue, analyticsVersion: 5,
+  tokenActivity: { scopeThreadId: null, scopeModelKey: null, samples: 0, timedSamples: 0, untimedSamples: 0,
+    firstRecordedAt: null, lastRecordedAt: null, tokens: emptyTokens, untimedTokens: emptyTokens,
+    cache: { eligibleSamples: 0, missingSamples: 0, inputTokens: null, readTokens: null, writeTokens: null,
+      uncachedTokens: null, readShare: null, writeShare: null, uncachedShare: null }, models: [], threads: [], buckets: [] } }
 
 describe("SessionAnalytics Module", () => {
   it("offers tool filters only within the wire UTF-8 byte bound", () => {
@@ -40,6 +48,15 @@ describe("SessionAnalytics Module", () => {
     expect(sessionAnalyticsToolSelections(report)[0]!.filter).toBe(key)
     expect(selectSessionAnalyticsEvidence({ metric: "unknown_tools", tool: key, thread: "root" }, "one"))
       .toEqual({ metric: "unknown_tools", tool: key, thread: "root", snapshot: "one" })
+  })
+  it("keeps stable tool filtering and file/record evidence available in v5", async () => {
+    const tool = { key: `tool:${"c".repeat(64)}`, identity: null, name: "Read", kind: "read",
+      calls: 1, completed: 0, failed: 0, pending: 0, inProgress: 0, unknown: 1 }
+    expect(sessionAnalyticsToolSelections({ ...tokenValue, tools: [tool] })[0]!.filter).toBe(tool.key)
+    for (const query of [{ metric: "files" as const, file: fileKey }, { metric: "records" as const, snapshot: "one", range: "old-activity" }]) {
+      expect(await Effect.runPromise(readSessionAnalytics("session", query).pipe(Effect.provide(provide(tokenValue)))))
+        .toEqual(tokenValue)
+    }
   })
   it("reads through the remote Interface with a snapshot-bound evidence query", async () => {
     const query: SessionAnalyticsQuery = { snapshot: "one", metric: "failed_tools", thread: "root", tool: "Read", cursor: "next", limit: 20 }
@@ -83,6 +100,78 @@ describe("SessionAnalytics Module", () => {
       expect(id).toBe("session"); expect(request).toEqual(query); return Effect.succeed(scoped)
     } })
     expect(await Effect.runPromise(readSessionAnalytics("session", query).pipe(Effect.provide(layer)))).toEqual(scoped)
+  })
+  it("selects token intervals with their model and Thread scope and clears incompatible evidence filters", () => {
+    const selected = selectSessionAnalyticsEvidence({ metric: "token_records", model: modelKey, thread: "child", tokenRange: "opaque-token",
+      range: "old-activity", tool: "Read", capability: "lookup", server: "docs", file: fileKey, operation: "read" }, "one")
+    expect(selected).toEqual({ metric: "token_records", model: modelKey, thread: "child", tokenRange: "opaque-token", snapshot: "one" })
+    for (const changed of [{ ...selected, model: `model:${"c".repeat(64)}` }, { ...selected, thread: "root" }]) {
+      expect(selectSessionAnalyticsEvidence(changed, "one", selected))
+        .toEqual({ metric: "records", model: changed.model, thread: changed.thread, snapshot: "one" })
+    }
+    expect(selectSessionAnalyticsEvidence(selected, "replacement", selected))
+      .toEqual({ metric: "records", model: modelKey, thread: "child", snapshot: "replacement" })
+    expect(selectSessionAnalyticsEvidence({ ...selected, metric: "tools" }, "one", selected))
+      .toEqual({ metric: "tools", model: modelKey, thread: "child", snapshot: "one" })
+    expect(selectSessionAnalyticsEvidence({ metric: "tools", thread: "child" }, "one", selected))
+      .toEqual({ metric: "tools", model: modelKey, thread: "child", snapshot: "one" })
+    expect(selectSessionAnalyticsEvidence({ metric: "token_records", thread: "child", tokenRange: "opaque-token", model: null }, "one", selected))
+      .toEqual({ metric: "records", thread: "child", snapshot: "one" })
+    expect(selectSessionAnalyticsEvidence({ metric: "token_records", tokenRange: "opaque-token" }))
+      .toEqual({ metric: "records" })
+    expect(selectSessionAnalyticsEvidence({ metric: "records", model: `model:${"c".repeat(64)}`, range: "old-activity" }, "one",
+      { metric: "records", model: modelKey, snapshot: "one", range: "old-activity" }))
+      .toEqual({ metric: "records", model: `model:${"c".repeat(64)}`, snapshot: "one" })
+  })
+  it("preserves the server token interval and pagination without claiming precise Usage-to-Event association", async () => {
+    const scoped = { ...tokenValue, activity: { ...tokenValue.activity, scopeThreadId: "child" },
+      tokenActivity: { ...tokenValue.tokenActivity, scopeThreadId: "child", scopeModelKey: modelKey } }
+    const query: SessionAnalyticsQuery = { metric: "token_records", tokenRange: "opaque-token", model: modelKey,
+      thread: "child", snapshot: "one", cursor: "token-page", limit: 4 }
+    const layer = Layer.succeed(SessionAnalyticsGateway, { read: (id, request) => {
+      expect(id).toBe("session"); expect(request).toEqual(query); return Effect.succeed(scoped)
+    } })
+    const report = await Effect.runPromise(readSessionAnalytics("session", query).pipe(Effect.provide(layer)))
+    expect(report).toEqual(scoped)
+    expect(report.usage.tokens.total).toBeNull()
+  })
+  it.each(["tools", "records", "files", "thoughts"] as const)("retains the model report scope alongside %s evidence", async metric => {
+    const query = selectSessionAnalyticsEvidence({ metric, model: modelKey }, "one")
+    expect(query).toEqual({ metric, model: modelKey, snapshot: "one" })
+    const scoped = { ...tokenValue, tokenActivity: { ...tokenValue.tokenActivity, scopeModelKey: modelKey } }
+    expect(await Effect.runPromise(readSessionAnalytics("session", query).pipe(Effect.provide(provide(scoped)))))
+      .toEqual(scoped)
+  })
+  it.each([1, 2, 3, 4] as const)("retains v%s reports while refusing unsupported token requests", async analyticsVersion => {
+    const report: SessionAnalytics = analyticsVersion === 1 ? value : analyticsVersion === 2
+      ? { ...value, analyticsVersion, capabilities: activityValue.capabilities } : analyticsVersion === 3 ? activityValue : fileValue
+    expect(await Effect.runPromise(readSessionAnalytics("session").pipe(Effect.provide(provide(report))))).toEqual(report)
+    for (const query of [{ model: modelKey }, { metric: "token_records" as const, tokenRange: "opaque-token", snapshot: "one" }]) {
+      expect(await Effect.runPromise(readSessionAnalytics("session", query).pipe(Effect.provide(provide(report)), Effect.flip)))
+        .toMatchObject({ reason: "http", status: 422 })
+    }
+  })
+  it.each([
+    { tokenActivity: { ...tokenValue.tokenActivity, scopeThreadId: "other" } },
+    { tokenActivity: { ...tokenValue.tokenActivity, scopeModelKey: modelKey } },
+    { activity: { ...tokenValue.activity, scopeThreadId: "other" } }
+  ])("rejects mismatched v5 activity or token scope case %#", async altered => {
+    expect(await Effect.runPromise(readSessionAnalytics("session").pipe(Effect.provide(provide({ ...tokenValue, ...altered })), Effect.flip)))
+      .toMatchObject({ reason: "decode" })
+  })
+  it.each([
+    { model: "raw-model-name" }, { model: `model:${"B".repeat(64)}` }, { model: "" },
+    { metric: "token_records" as const }, { metric: "token_records" as const, tokenRange: "opaque-token" },
+    { metric: "records" as const, snapshot: "one", tokenRange: "opaque-token" },
+    { metric: "token_records" as const, snapshot: "one", tokenRange: "" },
+    { metric: "token_records" as const, snapshot: "one", tokenRange: "界".repeat(171) },
+    ...[{ range: "activity-range" }, { tool: "Read" }, { capability: "lookup" }, { server: "docs" },
+      { file: fileKey }, { operation: "read" as const }].map(filter =>
+      ({ metric: "token_records" as const, snapshot: "one", tokenRange: "opaque-token", ...filter }))
+  ])("rejects invalid token selections before remote IO case %#", async query => {
+    const layer = Layer.succeed(SessionAnalyticsGateway, { read: () => Effect.die("must not read") })
+    expect(await Effect.runPromise(readSessionAnalytics("session", query).pipe(Effect.provide(layer), Effect.flip)))
+      .toMatchObject({ reason: "http", status: 422 })
   })
   it.each([3, 4] as const)("rejects a v%s response for a different activity Thread scope", async analyticsVersion => {
     const result: SessionAnalytics = analyticsVersion === 3 ? activityValue : { ...activityValue, analyticsVersion,

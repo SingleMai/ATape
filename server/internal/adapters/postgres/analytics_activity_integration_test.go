@@ -84,6 +84,57 @@ func TestRecordedActivityPostgresContract(t *testing.T) {
 		b.Session.ReportedEventCount = len(b.Events)
 		return b
 	}
+	t.Run("Token Usage scope, same-interval Reader and independent Usage freshness", func(t *testing.T) {
+		b := clockBatch("token-activity-native")
+		counter := func(n int64) *int64 { return &n }
+		b.Usage = []ingestion.Usage{
+			{SourceUsageID: "one", SourceThreadID: "provider-root", Revision: 1, OccurredAt: b.Events[0].OccurredAt, Model: "alpha", InputTokens: counter(100), OutputTokens: counter(20), CacheReadTokens: counter(60), CacheWriteTokens: counter(10)},
+			{SourceUsageID: "partial", SourceThreadID: "provider-root", Revision: 1, OccurredAt: b.Events[0].OccurredAt, Model: "alpha", InputTokens: counter(50), CacheReadTokens: counter(10), CacheWriteTokens: counter(0)},
+			{SourceUsageID: "outside", SourceThreadID: "provider-root", Revision: 1, OccurredAt: "2026-10-12T00:02:00Z", Model: "beta", InputTokens: counter(300), OutputTokens: counter(50), CacheReadTokens: counter(0), CacheWriteTokens: counter(0)},
+		}
+		created, e := ingestor.ApplyBatch(ctx, cli, b)
+		if e != nil {
+			t.Fatal(e)
+		}
+		view := open(created.SessionID, sessionanalytics.Query{AnalyticsVersion: 5})
+		a := view.TokenActivity
+		if a == nil || a.Samples != 3 || a.TimedSamples != 3 || a.Tokens.Total.KnownSubtotal == nil || *a.Tokens.Total.KnownSubtotal != 470 || a.Tokens.Total.MissingSamples != 1 || view.Usage.Tokens.Total != nil || len(a.Buckets) != 60 || a.Buckets[59].Records != 0 || a.Buckets[59].Samples != 1 {
+			t.Fatalf("PostgreSQL Token accounting: %+v", a)
+		}
+		if a.Cache.EligibleSamples != 3 || a.Cache.ReadShare == nil || math.Abs(*a.Cache.ReadShare-70.0/450.0) > 1e-12 {
+			t.Fatalf("cache cohort: %+v", a.Cache)
+		}
+		q := sessionanalytics.Query{AnalyticsVersion: 5, Metric: "token_records", Snapshot: view.Snapshot, TokenRange: a.Buckets[0].Range}
+		page := open(created.SessionID, q)
+		if len(page.Evidence.Items) != 1 || page.Evidence.Items[0].ClockQuality != "recorded" {
+			t.Fatalf("Token interval evidence: %+v", page.Evidence)
+		}
+		item := page.Evidence.Items[0]
+		if _, ok, e := store.ConversationPage(ctx, web, created.SessionID, item.ThreadID, canonical.ConversationPageRequest{Snapshot: view.Snapshot, AtEventID: item.EventID, Limit: 1}); e != nil || !ok {
+			t.Fatalf("Token interval conditional Reader: %v %v", ok, e)
+		}
+		b.BatchID = "token-usage-only-change"
+		b.Usage[0].Revision++
+		b.Usage[0].InputTokens = counter(101)
+		if _, e := ingestor.ApplyBatch(ctx, cli, b); e != nil {
+			t.Fatal(e)
+		}
+		_, e = module.Open(ctx, web, created.SessionID, q)
+		requireStale(e)
+		_, _, e = store.ConversationPage(ctx, web, created.SessionID, item.ThreadID, canonical.ConversationPageRequest{Snapshot: view.Snapshot, AtEventID: item.EventID, Limit: 1})
+		requireStale(e)
+		fresh := open(created.SessionID, sessionanalytics.Query{AnalyticsVersion: 5})
+		if fresh.Snapshot == view.Snapshot || *fresh.TokenActivity.Tokens.Input.KnownSubtotal != 451 {
+			t.Fatal("Usage-only change did not refresh Token activity")
+		}
+		outsider := web
+		outsider.UserID = "01991b70-4d2b-7c96-a532-5818faba2e72"
+		_, e = module.Open(ctx, outsider, created.SessionID, sessionanalytics.Query{AnalyticsVersion: 5, Metric: "token_records", Snapshot: fresh.Snapshot, TokenRange: fresh.TokenActivity.Buckets[0].Range})
+		var concealed *sessionanalytics.NotFoundError
+		if !errors.As(e, &concealed) {
+			t.Fatalf("Token range granted access: %v", e)
+		}
+	})
 
 	t.Run("native profiles, range paging, conditional Reader and metadata freshness", func(t *testing.T) {
 		legacy := canonicalcontract.ValidBatch()
@@ -192,7 +243,7 @@ func TestRecordedActivityPostgresContract(t *testing.T) {
 			if b.CanonicalProfileVersion == ingestion.ToolIdentityCanonicalProfileVersion {
 				target = publication.ToolIdentityTargetProfile
 			}
-			body, e := json.Marshal(publication.CanonicalPart{Target: publication.Target{Profile: target, Events: len(b.Events), Threads: len(b.Threads), RetainedThreadIDs: []string{}}, Batch: b})
+			body, e := json.Marshal(publication.CanonicalPart{Target: publication.Target{Profile: target, Events: len(b.Events), Usage: len(b.Usage), Threads: len(b.Threads), RetainedThreadIDs: []string{}}, Batch: b})
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -215,6 +266,9 @@ func TestRecordedActivityPostgresContract(t *testing.T) {
 		for _, profile := range []string{ingestion.UnknownTimeCanonicalProfileVersion, ingestion.ToolIdentityCanonicalProfileVersion} {
 			b := clockBatch("activity-publication-" + profile)
 			b.CanonicalProfileVersion = profile
+			input, output, read, write := int64(100), int64(20), int64(60), int64(10)
+			b.Usage = []ingestion.Usage{{SourceUsageID: "published-usage", SourceThreadID: "provider-root", Revision: 1,
+				OccurredAt: b.Events[1].OccurredAt, Model: "published-model", InputTokens: &input, OutputTokens: &output, CacheReadTokens: &read, CacheWriteTokens: &write}}
 			attempt := stage(b, "")
 			if _, ok, e := store.SessionAnalytics(ctx, web, attempt.SessionID, ""); e != nil || ok {
 				t.Fatalf("pending candidate visible: %v %v", ok, e)
@@ -226,6 +280,15 @@ func TestRecordedActivityPostgresContract(t *testing.T) {
 			view := open(attempt.SessionID, sessionanalytics.Query{AnalyticsVersion: 3, Metric: "records"})
 			if view.Head != head.Head || view.Activity.RecordedTimeEvents != 2 || view.Activity.UnknownTimeEvents != 1 || view.Activity.LegacyTimeEvents != 0 {
 				t.Fatalf("publication lost clock profile: %+v", view.Activity)
+			}
+			tokens := open(attempt.SessionID, sessionanalytics.Query{AnalyticsVersion: 5})
+			if tokens.Head != head.Head || tokens.TokenActivity.Samples != 1 || *tokens.TokenActivity.Tokens.Total.KnownSubtotal != 120 || len(tokens.TokenActivity.Buckets) != 1 || tokens.TokenActivity.Buckets[0].Records != 1 {
+				t.Fatalf("publication Token facts: %+v", tokens.TokenActivity)
+			}
+			tokenQuery := sessionanalytics.Query{AnalyticsVersion: 5, Metric: "token_records", Snapshot: tokens.Snapshot, TokenRange: tokens.TokenActivity.Buckets[0].Range}
+			tokenPage := open(attempt.SessionID, tokenQuery)
+			if len(tokenPage.Evidence.Items) != 1 {
+				t.Fatalf("publication Token interval: %+v", tokenPage.Evidence)
 			}
 			selected := open(attempt.SessionID, sessionanalytics.Query{AnalyticsVersion: 3, Metric: "records", Snapshot: view.Snapshot, Range: view.Activity.Buckets[len(view.Activity.Buckets)-1].Range})
 			item := selected.Evidence.Items[0]
@@ -248,6 +311,8 @@ func TestRecordedActivityPostgresContract(t *testing.T) {
 			if _, e = writer.Activate(ctx, cli, replacement.ID); e != nil {
 				t.Fatal(e)
 			}
+			_, e = module.Open(ctx, web, attempt.SessionID, tokenQuery)
+			requireStale(e)
 			_, e = module.Open(ctx, web, attempt.SessionID, sessionanalytics.Query{AnalyticsVersion: 3, Metric: "records", Snapshot: view.Snapshot, Range: view.Activity.Buckets[0].Range})
 			requireStale(e)
 			_, _, e = store.ConversationPage(ctx, web, attempt.SessionID, item.ThreadID, canonical.ConversationPageRequest{Snapshot: view.Snapshot, AtEventID: item.EventID, Limit: 1})

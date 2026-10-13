@@ -13,6 +13,9 @@ v5 and Analytics v4. The 0.5.11 bridge already includes supporting Host, Server
 and reader behavior while retaining genuine older v3/v4 provider output.
 Published 0.5.10 does not implement these contracts. See
 [target-owned updates](cli/setup-and-adapters.md#target-owned-updates).
+The Analytics v5 Token distribution below is a subsequent implementation
+increment. The 0.5.12 delivery evidence does not establish its deployment. It
+uses existing Canonical Usage without a new capture profile.
 
 ## Metrics and evidence
 
@@ -41,6 +44,68 @@ on successful source replay. Unreplayed
 historical records can still carry an older Adapter's epoch or outcome; saved
 non-null clock coverage alone does not establish clock quality. See
 [Codex source clocks](adapters/codex.md#source-clock-quality-and-replay).
+
+## Token consumption distribution and cache shares
+
+Opt-in Analytics v5 requires `tokenActivity`. Existing Session `usage` totals and
+per-Thread Token totals retain their unfiltered, complete-or-null semantics. The new report
+independently selects a Thread and an opaque returned model key.
+
+| Field | Meaning |
+| --- | --- |
+| `scopeThreadId`, `scopeModelKey` | Selected scope, or null for all |
+| `samples`, `timedSamples`, `untimedSamples` | Recorded Usage samples and their stored timestamp coverage |
+| `tokens` | Known subtotals with per-classification reported/missing counts and overflow flags |
+| `untimedTokens` | The same accounting for samples without a stored timestamp |
+| `cache` | Cache-read, cache-write and uncached input from one complete sample cohort |
+| `models` | Model accounting within the selected Thread, before model filtering; an unreported model is null |
+| `threads` | Thread accounting within the selected model, before Thread filtering |
+| `buckets` | At most 60 intervals spanning selected stored Usage timestamps, with Token accounting and opaque ranges |
+
+Each counter returns `knownSubtotal`, `reportedSamples`, `missingSamples` and
+`overflowed`. Subtotals describe reported classifications, not a complete source
+conversation. No reported sample returns null rather than invented zero; a real
+reported zero stays zero. Total combines input and output only from the same
+sample when both are valid. Cache is already in input and reasoning in output;
+neither is added again. Single-sample or aggregate arithmetic beyond JavaScript's
+safe integer range makes the subtotal null with `overflowed: true`, retaining
+the reported sample count.
+
+Cache shares use only samples with valid inclusive input, cache read and cache
+write, with cache subdivisions not exceeding input. The same cohort supplies
+every numerator and denominator. `eligibleSamples` and `missingSamples` disclose
+coverage. Shares are fractions from zero to one; no eligible samples, a zero
+denominator or overflow makes them unavailable. They do not estimate monetary
+savings or cache effectiveness for unreported requests.
+
+Buckets use **Usage timestamps**, independently of the Event activity span.
+Usage v1 requires a timestamp; current Codex and Claude readers emit samples only
+when an explicit source timestamp is present. This report describes stored Usage
+time, without inferring Event clock quality or independently verifying historical
+clocks. Missing dates stay in the untimed subtotal; upload/observation time never
+fills them. Samples before or after all Events still enter the distribution.
+Intervals are `[from,to)` except the inclusive final endpoint; a single instant
+produces one point interval.
+
+The Web displays known subtotals, coverage, cache shares, model and Thread
+selections, all buckets and up to five high-consumption intervals. Hotspots rank
+usable known total subtotals, retaining partial-coverage disclosure. This is
+recorded consumption, not context occupancy or per-response generation speed.
+No recorded Usage means unavailable, including Cursor's current capture scope.
+
+Select an interval using `metric=token_records`, its returned `tokenRange` and
+the same snapshot. The selector binds Session, version, Thread and model. It
+returns recorded-quality Events in that Thread scope and interval. **This is
+interval navigation, not Usage-to-Event or model attribution.** No nearest Event
+is invented. An interval can contain zero eligible records; the Web shows that
+count and disables its original-record action. Unknown and legacy Event clocks
+remain outside these dated ranges.
+
+Model and Thread changes clear incompatible interval and page state. Conditional
+Reader links and Browser Back retain the analysis selection; full refresh clears
+all filters. Older v1-v4 Servers retain existing totals and explicitly mark Token
+distribution unavailable. Web negotiates v5, v4, v3 and JSON through the existing
+safelisted Accept header. See [ADR-0127](architecture/adr/0127-recorded-token-activity.md).
 
 ## Stable tool grouping
 
@@ -274,15 +339,17 @@ evidence anchors identify the first stored Event in a captured child Thread.
 
 | Query | Contract |
 | --- | --- |
-| `snapshot` | Opaque conditional current-source token, at most 200 bytes; required on `/evidence` and when using `cursor` or `range` |
-| `metric` | `tools` (default), `failed_tools`, `unknown_tools`, `user_inputs`, `thoughts`, `threads`, `mcp_tools`, `skills`, or v3/v4-only `records`, or v4-only `files` |
-| `thread` | Select evidence and v3 activity from one captured Thread, at most 500 bytes |
+| `snapshot` | Opaque conditional current-source token, at most 200 bytes; required on `/evidence` and when using `cursor`, `range` or `tokenRange` |
+| `metric` | `tools` (default), `failed_tools`, `unknown_tools`, `user_inputs`, `thoughts`, `threads`, `mcp_tools`, `skills`, v3-v5 `records`, v4/v5 `files`, or v5 `token_records` |
+| `thread` | Select evidence, v3-v5 activity and v5 Token distribution from one captured Thread, at most 500 bytes |
 | `range` | V3/v4-only opaque server interval or unplaced selection, at most 512 bytes; requires `records` and the same snapshot/Thread scope |
 | `tool` | V4 returned group key; v1–v3 exact displayed label; only the three tool metrics, at most 500 bytes |
 | `capability` | Exact normalized name for `mcp_tools` or `skills`, at most 500 bytes |
 | `server` | Exact normalized server for `mcp_tools`, at most 500 bytes |
 | `file` | V4 returned opaque path key, only with `files` |
 | `operation` | V4 `read`, `edit` or `search`, only with `files`; combines with `file` and Thread using AND |
+| `model` | V5 returned opaque model key; selects Token activity without attributing Events to a model |
+| `tokenRange` | V5 returned opaque Usage interval; requires `token_records` and snapshot; cannot combine with Event `range` |
 | `cursor` | Opaque evidence continuation, at most 1024 bytes, bound to Session, snapshot, analytics version and filters |
 | `limit` | Evidence items per page, 1–100; default 20 |
 
@@ -296,6 +363,9 @@ V4 file and operation filters also bind it. V3/v4 ranges also bind it. V3/v4 evi
 `unknown` or `legacy`; `occurredAt` preserves the stored date or explicit null.
 `evidence.nextCursor` is absent at the end; continuation retains the same source
 token and filters. Each request rechecks authorization.
+V5 retains v4 tools, files, activity and clock quality, adds required
+`tokenActivity`, and binds model and Token range into continuation. Invalid range
+and model combinations fail rather than silently changing scope.
 
 ## Snapshot consistency and reader opening
 

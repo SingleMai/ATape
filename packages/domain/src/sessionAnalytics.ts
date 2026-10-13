@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { AcpToolIdentity, FileActivityOperation, FileActivityPath } from "./collector.ts"
 
-export const SessionAnalyticsMetric = Schema.Literals(["tools", "failed_tools", "unknown_tools", "user_inputs", "thoughts", "threads", "mcp_tools", "skills", "records", "files"])
+export const SessionAnalyticsMetric = Schema.Literals(["tools", "failed_tools", "unknown_tools", "user_inputs", "thoughts", "threads", "mcp_tools", "skills", "records", "files", "token_records"])
 export type SessionAnalyticsMetric = typeof SessionAnalyticsMetric.Type
 
 const Count = Schema.Number
@@ -29,6 +29,43 @@ export const SessionAnalyticsTokens = Schema.Struct({
   recordedSamples: Count, incompleteSamples: Count
 })
 export type SessionAnalyticsTokens = typeof SessionAnalyticsTokens.Type
+
+export const SessionAnalyticsModelKey = Schema.String.check(Schema.makeFilter(value => /^model:[0-9a-f]{64}$/.test(value)))
+export const SessionAnalyticsTokenCounter = Schema.Struct({
+  knownSubtotal: Schema.NullOr(ActivityCount), reportedSamples: ActivityCount,
+  missingSamples: ActivityCount, overflowed: Schema.Boolean
+})
+export type SessionAnalyticsTokenCounter = typeof SessionAnalyticsTokenCounter.Type
+export const SessionAnalyticsTokenAccounting = Schema.Struct({
+  total: SessionAnalyticsTokenCounter, input: SessionAnalyticsTokenCounter, output: SessionAnalyticsTokenCounter,
+  cacheRead: SessionAnalyticsTokenCounter, cacheWrite: SessionAnalyticsTokenCounter
+})
+export type SessionAnalyticsTokenAccounting = typeof SessionAnalyticsTokenAccounting.Type
+const TokenShare = Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(1)))
+export const SessionAnalyticsTokenCache = Schema.Struct({
+  eligibleSamples: ActivityCount, missingSamples: ActivityCount,
+  inputTokens: Schema.NullOr(ActivityCount), readTokens: Schema.NullOr(ActivityCount),
+  writeTokens: Schema.NullOr(ActivityCount), uncachedTokens: Schema.NullOr(ActivityCount),
+  readShare: TokenShare, writeShare: TokenShare, uncachedShare: TokenShare
+})
+export type SessionAnalyticsTokenCache = typeof SessionAnalyticsTokenCache.Type
+export const SessionAnalyticsTokenActivity = Schema.Struct({
+  scopeThreadId: Schema.NullOr(Schema.String), scopeModelKey: Schema.NullOr(SessionAnalyticsModelKey),
+  samples: ActivityCount, timedSamples: ActivityCount, untimedSamples: ActivityCount,
+  firstRecordedAt: Schema.NullOr(Schema.String), lastRecordedAt: Schema.NullOr(Schema.String),
+  tokens: SessionAnalyticsTokenAccounting, untimedTokens: SessionAnalyticsTokenAccounting,
+  cache: SessionAnalyticsTokenCache,
+  models: Schema.Array(Schema.Struct({ key: SessionAnalyticsModelKey, model: Schema.NullOr(Schema.String),
+    samples: ActivityCount, tokens: SessionAnalyticsTokenAccounting, cache: SessionAnalyticsTokenCache
+  })).check(Schema.isMaxLength(1000)),
+  threads: Schema.Array(Schema.Struct({ id: Schema.String, samples: ActivityCount,
+    tokens: SessionAnalyticsTokenAccounting, cache: SessionAnalyticsTokenCache
+  })).check(Schema.isMaxLength(5000)),
+  buckets: Schema.Array(Schema.Struct({ from: Schema.String, to: Schema.String, includesEnd: Schema.Boolean,
+    samples: ActivityCount, tokens: SessionAnalyticsTokenAccounting, records: ActivityCount, range: ActivityRange
+  })).check(Schema.isMaxLength(60))
+})
+export type SessionAnalyticsTokenActivity = typeof SessionAnalyticsTokenActivity.Type
 
 const AnalyticsFields = {
   snapshot: Schema.String,
@@ -78,6 +115,14 @@ const ActivityEvidence = Schema.Struct({
     clockQuality: SessionAnalyticsClockQuality })),
   nextCursor: Schema.optionalKey(Schema.String)
 })
+const FileAnalyticsFields = {
+  fileActivity: SessionAnalyticsFileActivity,
+  summary: Schema.Struct({ ...AnalyticsFields.summary.fields, identifiedToolCalls: Count, unidentifiedToolCalls: Count }),
+  tools: Schema.Array(Schema.Struct({ key: StableToolKey, identity: Schema.NullOr(AcpToolIdentity),
+    name: Schema.String, kind: Schema.String, ...Outcomes })),
+  activity: SessionAnalyticsActivity,
+  evidence: ActivityEvidence
+}
 export const SessionAnalyticsCapabilities = Schema.Struct({
   mcpCalls: Count,
   skillCalls: Count,
@@ -97,12 +142,10 @@ export const SessionAnalytics = Schema.Union([
     evidence: ActivityEvidence
   }),
   Schema.Struct({ analyticsVersion: Schema.Literal(4), ...AnalyticsFields, capabilities: SessionAnalyticsCapabilities,
-    fileActivity: SessionAnalyticsFileActivity,
-    summary: Schema.Struct({ ...AnalyticsFields.summary.fields, identifiedToolCalls: Count, unidentifiedToolCalls: Count }),
-    tools: Schema.Array(Schema.Struct({ key: StableToolKey, identity: Schema.NullOr(AcpToolIdentity),
-      name: Schema.String, kind: Schema.String, ...Outcomes })),
-    activity: SessionAnalyticsActivity,
-    evidence: ActivityEvidence
+    ...FileAnalyticsFields
+  }),
+  Schema.Struct({ analyticsVersion: Schema.Literal(5), ...AnalyticsFields, capabilities: SessionAnalyticsCapabilities,
+    ...FileAnalyticsFields, tokenActivity: SessionAnalyticsTokenActivity
   })
 ])
 export type SessionAnalytics = typeof SessionAnalytics.Type
@@ -115,6 +158,8 @@ export type SessionAnalyticsQuery = {
   readonly capability?: string
   readonly server?: string
   readonly range?: string
+  readonly model?: string
+  readonly tokenRange?: string
   readonly file?: string
   readonly operation?: typeof FileActivityOperation.Type
   readonly cursor?: string

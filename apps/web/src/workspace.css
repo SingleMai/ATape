@@ -1197,6 +1197,17 @@ button.workspace-team-trigger:hover,
 .analytics-link:disabled { color: inherit; cursor: default; }
 .analytics-models { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 20px; }
 .analytics-models h3 { font-size: 1rem; overflow-wrap: anywhere; }
+.analytics-token-scope { display: flex; flex-wrap: wrap; gap: 12px; max-width: 100%; }
+.analytics-token-coverage p { margin: 8px 0 0; color: var(--atape-color-text-muted); font-size: 0.8rem; line-height: 1.5; }
+.analytics-token-bars .analytics-activity-bar { min-width: 34px; }
+.analytics-token-unknown { border-style: dashed; }
+.analytics-token-hotspots { padding-inline-start: 24px; }
+.analytics-token-hotspots li { margin: 12px 0; }
+.analytics-token-hotspots li > span { display: block; margin-top: 4px; color: var(--atape-color-text-muted); font-size: 0.85rem; }
+.analytics-token-hotspots .analytics-link[aria-pressed="true"] { text-decoration: underline; }
+.analytics-token-hotspots .analytics-link:focus-visible { outline: 2px solid var(--atape-color-accent); outline-offset: 3px; }
+.analytics-untimed-tokens { margin-top: 24px; }
+.analytics-untimed-tokens summary { cursor: pointer; }
 .analytics-filters { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
 .analytics-filters label { display: grid; gap: 6px; font-size: 0.85rem; min-width: 150px; max-width: 100%; }
 .analytics-filters select { max-width: 280px; border: 1px solid var(--atape-color-border-soft); border-radius: 6px; padding: 8px; background: var(--atape-color-paper); color: inherit; }

@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { activityFixture, analyticsFixture, capabilitiesFixture, executeToolKey, fileActivityFixture, sourceFileKey, stableToolsFixture } from "../../test/sessionAnalyticsFixture"
 import { BrowserSessionAnalyticsGatewayLayer } from "./sessionAnalyticsGateway"
+import { tokenActivityFixture, tokenModelKey, tokenUnknownModelKey } from "../../test/sessionTokenActivityFixture"
 
 const run = <A, E>(effect: Effect.Effect<A, E, import("@atape/application").SessionAnalyticsGateway>) =>
   Effect.runPromise(effect.pipe(Effect.provide(BrowserSessionAnalyticsGatewayLayer)))
@@ -18,7 +19,7 @@ describe("Session analytics browser Adapter", () => {
     expect(Object.fromEntries(url.searchParams)).toEqual({ snapshot: "snapshot-one", metric: "failed_tools", thread: "child/one", tool: "read & write", cursor: "opaque+=", limit: "20" })
     expect(result.usage.tokens).toMatchObject({ total: null, cacheRead: 0 })
     const headers = new Headers(fetchMock.mock.calls[0]![1]?.headers)
-    expect(headers.get("Accept")).toBe("application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
+    expect(headers.get("Accept")).toBe("application/vnd.atape.session-analytics.v5+json, application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
     expect(headers.has("ATape-Accept-Analytics-Version")).toBe(false)
   })
   it("reads v1 without inventing a capability report, and v2 with a required report", async () => {
@@ -72,7 +73,37 @@ describe("Session analytics browser Adapter", () => {
     expect(Object.fromEntries(url.searchParams)).toEqual({ ...query, limit: "4" })
     expect(url.searchParams.get("file")).not.toBe("/work/src/app.ts")
     expect(new Headers(fetchMock.mock.calls[0]![1]?.headers).get("Accept"))
-      .toBe("application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
+      .toBe("application/vnd.atape.session-analytics.v5+json, application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
+  })
+  it("negotiates v5 and transports model and Token interval keys without converting them into Event identity", async () => {
+    const report = { ...tokenActivityFixture, snapshot: "snapshot-one", activity: { ...tokenActivityFixture.activity, scopeThreadId: "child/one" }, tokenActivity: { ...tokenActivityFixture.tokenActivity,
+      scopeThreadId: "child/one", scopeModelKey: tokenModelKey } }
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(report)))
+    vi.stubGlobal("fetch", fetchMock)
+    const query = { metric: "token_records" as const, tokenRange: "opaque+=token-range", model: tokenModelKey,
+      snapshot: "snapshot-one", thread: "child/one", cursor: "next+=", limit: 4 }
+    expect(await run(readSessionAnalytics("session-reader", query))).toEqual(report)
+    const url = new URL(fetchMock.mock.calls[0]![0] as string, "http://localhost")
+    expect(Object.fromEntries(url.searchParams)).toEqual({ ...query, limit: "4" })
+    expect(new Headers(fetchMock.mock.calls[0]![1]?.headers).get("Accept"))
+      .toBe("application/vnd.atape.session-analytics.v5+json, application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
+    expect(url.searchParams.has("at")).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+  it("requires v5 Token coverage and accepts null counters and an explicitly missing model", async () => {
+    const { tokenActivity: _activity, ...missing } = tokenActivityFixture
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...tokenActivityFixture, tokenActivity: { ...tokenActivityFixture.tokenActivity, scopeModelKey: tokenUnknownModelKey } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify(missing)))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...tokenActivityFixture, tokenActivity: {
+        ...tokenActivityFixture.tokenActivity, cache: { ...tokenActivityFixture.tokenActivity.cache, readShare: 2 } } })))
+    vi.stubGlobal("fetch", fetchMock)
+    const result = await run(readSessionAnalytics("session-reader", { model: tokenUnknownModelKey }))
+    if (result.analyticsVersion === 5) {
+      expect(result.tokenActivity.models[1]).toMatchObject({ model: null, tokens: { total: { knownSubtotal: null, reportedSamples: 0, missingSamples: 1 } } })
+    }
+    expect(await run(readSessionAnalytics("session-reader").pipe(Effect.flip))).toMatchObject({ reason: "decode" })
+    expect(await run(readSessionAnalytics("session-reader").pipe(Effect.flip))).toMatchObject({ reason: "decode" })
   })
   it("requires the v4 file report, including explicit empty coverage and returned path keys", async () => {
     const { fileActivity: _fileActivity, ...missingReport } = fileActivityFixture

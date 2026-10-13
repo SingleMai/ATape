@@ -24,15 +24,16 @@ import (
 )
 
 const (
-	Version                 = 2
-	ActivityVersion         = 3
-	StableToolVersion       = 4
-	MaxFacts                = canonical.AnalyticsRecordLimit
-	MaxThreads              = canonical.AnalyticsThreadLimit
-	MaxTools                = 2000
-	MaxModels               = 1000
-	MaxResponseBytes        = 2 << 20
-	maxSafeInteger    int64 = 9007199254740991
+	Version                    = 2
+	ActivityVersion            = 3
+	StableToolVersion          = 4
+	TokenActivityVersion       = 5
+	MaxFacts                   = canonical.AnalyticsRecordLimit
+	MaxThreads                 = canonical.AnalyticsThreadLimit
+	MaxTools                   = 2000
+	MaxModels                  = 1000
+	MaxResponseBytes           = 2 << 20
+	maxSafeInteger       int64 = 9007199254740991
 )
 
 var ErrCapacity = errors.New("session analysis exceeds supported capacity")
@@ -48,8 +49,8 @@ type Module struct{ store Store }
 func New(store Store) *Module { return &Module{store: store} }
 
 type Query struct {
-	Snapshot, Metric, Thread, Tool, Capability, Server, Cursor, Range, File, Operation string
-	Limit, AnalyticsVersion                                                            int
+	Snapshot, Metric, Thread, Tool, Capability, Server, Cursor, Range, File, Operation, Model, TokenRange string
+	Limit, AnalyticsVersion                                                                               int
 }
 type InvalidQueryError struct{ Field, Reason string }
 
@@ -166,24 +167,26 @@ type Evidence struct {
 	NextCursor string         `json:"nextCursor,omitempty"`
 }
 type Result struct {
-	Snapshot         string        `json:"snapshot"`
-	Head             string        `json:"head,omitempty"`
-	AnalyticsVersion int           `json:"analyticsVersion"`
-	SessionID        string        `json:"sessionId"`
-	CaptureStatus    string        `json:"captureStatus"`
-	Summary          Summary       `json:"summary"`
-	Tools            []Tool        `json:"tools"`
-	Capabilities     Capabilities  `json:"capabilities"`
-	Threads          []Thread      `json:"threads"`
-	Usage            Usage         `json:"usage"`
-	Evidence         Evidence      `json:"evidence"`
-	Activity         *Activity     `json:"activity,omitempty"`
-	FileActivity     *FileActivity `json:"fileActivity,omitempty"`
+	Snapshot         string         `json:"snapshot"`
+	Head             string         `json:"head,omitempty"`
+	AnalyticsVersion int            `json:"analyticsVersion"`
+	SessionID        string         `json:"sessionId"`
+	CaptureStatus    string         `json:"captureStatus"`
+	Summary          Summary        `json:"summary"`
+	Tools            []Tool         `json:"tools"`
+	Capabilities     Capabilities   `json:"capabilities"`
+	Threads          []Thread       `json:"threads"`
+	Usage            Usage          `json:"usage"`
+	Evidence         Evidence       `json:"evidence"`
+	Activity         *Activity      `json:"activity,omitempty"`
+	FileActivity     *FileActivity  `json:"fileActivity,omitempty"`
+	TokenActivity    *TokenActivity `json:"tokenActivity,omitempty"`
 }
 
-// Open always rechecks authorization at the snapshot Seam. Thread selects v3
-// activity scope; summary, tools, capabilities and usage remain Session-wide.
-// Other filters select only the evidence page.
+// Open always rechecks authorization at the snapshot Seam. Thread selects
+// activity and token-activity scope; Model selects only token activity. Summary,
+// tools, capabilities and usage remain Session-wide. Other filters select only
+// the evidence page.
 func (m *Module) Open(ctx context.Context, principal authentication.Principal, sessionID string, query Query) (result Result, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
@@ -247,8 +250,11 @@ func binding(sessionID string, q Query) string {
 	if q.AnalyticsVersion >= ActivityVersion {
 		encoded, _ = json.Marshal([]any{q.AnalyticsVersion, sessionID, q.Snapshot, q.Metric, q.Thread, q.Tool, q.Capability, q.Server, q.Range})
 	}
-	if q.AnalyticsVersion == StableToolVersion {
+	if q.AnalyticsVersion >= StableToolVersion {
 		encoded, _ = json.Marshal([]any{q.AnalyticsVersion, sessionID, q.Snapshot, q.Metric, q.Thread, q.Tool, q.Capability, q.Server, q.Range, q.File, q.Operation})
+	}
+	if q.AnalyticsVersion >= TokenActivityVersion {
+		encoded, _ = json.Marshal([]any{q.AnalyticsVersion, sessionID, q.Snapshot, q.Metric, q.Thread, q.Tool, q.Capability, q.Server, q.Range, q.File, q.Operation, q.Model, q.TokenRange})
 	}
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
@@ -257,15 +263,15 @@ func validateQuery(sessionID string, q Query) (Query, int, error) {
 	if q.AnalyticsVersion == 0 {
 		q.AnalyticsVersion = Version
 	}
-	if q.AnalyticsVersion != Version && q.AnalyticsVersion != ActivityVersion && q.AnalyticsVersion != StableToolVersion {
+	if q.AnalyticsVersion != Version && q.AnalyticsVersion != ActivityVersion && q.AnalyticsVersion != StableToolVersion && q.AnalyticsVersion != TokenActivityVersion {
 		return q, 0, &InvalidQueryError{"analyticsVersion", "is not supported"}
 	}
-	for field, value := range map[string]string{"sessionId": sessionID, "snapshot": q.Snapshot, "thread": q.Thread, "tool": q.Tool, "capability": q.Capability, "server": q.Server, "range": q.Range, "file": q.File, "operation": q.Operation} {
+	for field, value := range map[string]string{"sessionId": sessionID, "snapshot": q.Snapshot, "thread": q.Thread, "tool": q.Tool, "capability": q.Capability, "server": q.Server, "range": q.Range, "file": q.File, "operation": q.Operation, "model": q.Model, "tokenRange": q.TokenRange} {
 		limit := 500
 		if field == "snapshot" {
 			limit = 200
 		}
-		if field == "range" {
+		if field == "range" || field == "tokenRange" {
 			limit = 512
 		}
 		if len(value) > limit || !utf8.ValidString(value) {
@@ -282,17 +288,27 @@ func validateQuery(sessionID string, q Query) (Query, int, error) {
 	case "tools", "failed_tools", "unknown_tools", "user_inputs", "thoughts", "threads", "mcp_tools", "skills":
 	case "records":
 		if q.AnalyticsVersion < ActivityVersion {
-			return q, 0, &InvalidQueryError{"metric", "records requires analytics version 3 or 4"}
+			return q, 0, &InvalidQueryError{"metric", "records requires analytics version 3, 4 or 5"}
 		}
 	case "files":
-		if q.AnalyticsVersion != StableToolVersion {
-			return q, 0, &InvalidQueryError{"metric", "files requires analytics version 4"}
+		if q.AnalyticsVersion < StableToolVersion {
+			return q, 0, &InvalidQueryError{"metric", "files requires analytics version 4 or 5"}
+		}
+	case "token_records":
+		if q.AnalyticsVersion != TokenActivityVersion || q.Snapshot == "" || q.TokenRange == "" {
+			return q, 0, &InvalidQueryError{"metric", "token_records requires analytics version 5, snapshot and tokenRange"}
 		}
 	default:
 		return q, 0, &InvalidQueryError{"metric", "is not supported"}
 	}
 	if q.Range != "" && (q.AnalyticsVersion < ActivityVersion || q.Metric != "records" || q.Snapshot == "") {
-		return q, 0, &InvalidQueryError{"range", "requires version 3 or 4 records and snapshot"}
+		return q, 0, &InvalidQueryError{"range", "requires version 3, 4 or 5 records and snapshot"}
+	}
+	if q.Model != "" && q.AnalyticsVersion < TokenActivityVersion {
+		return q, 0, &InvalidQueryError{"model", "requires analytics version 5"}
+	}
+	if q.TokenRange != "" && (q.AnalyticsVersion < TokenActivityVersion || q.Metric != "token_records" || q.Snapshot == "" || q.Range != "") {
+		return q, 0, &InvalidQueryError{"tokenRange", "requires version 5 token_records and snapshot without range"}
 	}
 	if q.Tool != "" && q.Metric != "tools" && q.Metric != "failed_tools" && q.Metric != "unknown_tools" {
 		return q, 0, &InvalidQueryError{"tool", "only applies to tool metrics"}
@@ -368,7 +384,7 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 	}
 	r := Result{Snapshot: s.SnapshotToken, Head: s.Head, AnalyticsVersion: q.AnalyticsVersion, SessionID: s.Session.ID, CaptureStatus: s.Session.CaptureStatus,
 		Tools: []Tool{}, Capabilities: Capabilities{MCP: []MCPTool{}, Skills: []Skill{}}, Threads: []Thread{}, Usage: Usage{Models: []ModelUsage{}}, Evidence: Evidence{Items: []EvidenceItem{}}}
-	if q.AnalyticsVersion == StableToolVersion {
+	if q.AnalyticsVersion >= StableToolVersion {
 		r.Summary.IdentifiedToolCalls, r.Summary.UnidentifiedToolCalls = new(int), new(int)
 	}
 	threads := make(map[string]*Thread, len(s.Threads))
@@ -424,7 +440,7 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 			return Result{}, ErrCapacity
 		}
 		thread.EventCount++
-		if q.Metric == "records" {
+		if q.Metric == "records" || q.Metric == "token_records" {
 			candidates[event.ID] = evidence(event, "Record")
 		}
 		if event.OccurredAt.IsZero() {
@@ -510,7 +526,7 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 	capabilityNames, serverNames := make(map[string]bool), make(map[string]bool)
 	for key, call := range calls {
 		name, selector := call.name, call.name
-		if q.AnalyticsVersion == StableToolVersion {
+		if q.AnalyticsVersion >= StableToolVersion {
 			name, selector = stableToolName(call.identity), stableToolKey(call.identity, call.kind)
 			if call.identity == nil {
 				*r.Summary.UnidentifiedToolCalls++
@@ -525,7 +541,7 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 				return Result{}, ErrCapacity
 			}
 			group = &Tool{Name: name, Kind: call.kind}
-			if q.AnalyticsVersion == StableToolVersion {
+			if q.AnalyticsVersion >= StableToolVersion {
 				group.Key, group.Identity = selector, call.identity
 			}
 			groups[groupKey] = group
@@ -642,7 +658,7 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 			}
 		}
 	}
-	if q.AnalyticsVersion == StableToolVersion {
+	if q.AnalyticsVersion >= StableToolVersion {
 		var err error
 		r.FileActivity, err = deriveFileActivity(ctx, calls, q, candidates)
 		if err != nil {
@@ -692,6 +708,15 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 		}
 		r.Activity = activity.report
 	}
+	var tokenActivity *tokenActivitySelection
+	if q.AnalyticsVersion >= TokenActivityVersion {
+		var err error
+		tokenActivity, err = deriveTokenActivity(ctx, s, events, q)
+		if err != nil {
+			return Result{}, err
+		}
+		r.TokenActivity = tokenActivity.report
+	}
 	matched := 0
 	for _, event := range events {
 		item, ok := candidates[event.ID]
@@ -699,6 +724,9 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 			continue
 		}
 		if activity != nil && !activity.matches(event) {
+			continue
+		}
+		if q.Metric == "token_records" && !tokenActivity.matches(event) {
 			continue
 		}
 		if q.AnalyticsVersion >= ActivityVersion {
