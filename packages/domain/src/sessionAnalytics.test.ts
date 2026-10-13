@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { SessionAnalytics, SessionAnalyticsActivity } from "./sessionAnalytics.ts"
+import { SessionAnalytics, SessionAnalyticsActivity, SessionAnalyticsTokenActivity } from "./sessionAnalytics.ts"
 
 const activity = { scopeThreadId: null, eventCount: 2, recordedTimeEvents: 1, unknownTimeEvents: 1, legacyTimeEvents: 0,
   firstRecordedAt: "2026-10-12T00:00:00Z", lastRecordedAt: "2026-10-12T00:00:00Z", recordSpanMilliseconds: 0,
@@ -14,6 +14,18 @@ const common = { snapshot: "snapshot", sessionId: "session", captureStatus: "hea
       label: "Record", occurredAt: null }] } }
 const capabilities = { mcpCalls: 0, skillCalls: 0, unclassifiedCalls: 0, mcp: [], skills: [] }
 const fileActivity = { callsWithActivity: 0, callsWithoutActivity: 1, uniquePaths: 0, readCalls: 0, editCalls: 0, searchCalls: 0, paths: [] }
+const counter = { knownSubtotal: null, reportedSamples: 0, missingSamples: 1, overflowed: false }
+const tokens = { total: counter, input: counter, output: counter, cacheRead: counter, cacheWrite: counter }
+const emptyCounter = { ...counter, missingSamples: 0 }
+const emptyTokens = { total: emptyCounter, input: emptyCounter, output: emptyCounter, cacheRead: emptyCounter, cacheWrite: emptyCounter }
+const cache = { eligibleSamples: 0, missingSamples: 1, inputTokens: null, readTokens: null, writeTokens: null,
+  uncachedTokens: null, readShare: null, writeShare: null, uncachedShare: null }
+const modelKey = `model:${"b".repeat(64)}`
+const tokenActivity = { scopeThreadId: null, scopeModelKey: null, samples: 1, timedSamples: 1, untimedSamples: 0,
+  firstRecordedAt: "2026-10-13T00:00:00Z", lastRecordedAt: "2026-10-13T00:00:00Z", tokens, untimedTokens: emptyTokens, cache,
+  models: [{ key: modelKey, model: null, samples: 1, tokens, cache }], threads: [{ id: "root", samples: 1, tokens, cache }],
+  buckets: [{ from: "2026-10-13T00:00:00Z", to: "2026-10-13T00:00:00Z", includesEnd: true,
+    samples: 1, tokens, records: 0, range: "opaque-token-point" }] }
 const decode = Schema.decodeUnknownSync(SessionAnalytics)
 
 describe("Session Analytics versioned representation", () => {
@@ -22,6 +34,7 @@ describe("Session Analytics versioned representation", () => {
     const v2 = decode({ ...common, analyticsVersion: 2, capabilities })
     for (const value of [v1, v2]) {
       expect("activity" in value).toBe(false)
+      expect("tokenActivity" in value).toBe(false)
       expect("clockQuality" in value.evidence.items[0]!).toBe(false)
     }
   })
@@ -54,6 +67,38 @@ describe("Session Analytics versioned representation", () => {
       { ...v4, fileActivity: { ...fileActivity, paths: [{ key: "raw-path", path: "src/a.ts", calls: 1, readCalls: 1, editCalls: 0, searchCalls: 0 }] } },
       { ...v4, fileActivity: { ...fileActivity, callsWithoutActivity: -1 } }
     ]) expect(() => decode(malformed)).toThrow()
+  })
+  it("requires the complete v5 token report while keeping missing counters and empty original intervals explicit", () => {
+    const v5 = { ...common, analyticsVersion: 5, capabilities, activity, fileActivity, tokenActivity,
+      summary: { ...common.summary, identifiedToolCalls: 0, unidentifiedToolCalls: 0 },
+      evidence: { items: common.evidence.items.map(item => ({ ...item, clockQuality: "unknown" })) } }
+    expect(decode(v5)).toEqual(v5)
+    const { tokenActivity: _tokens, ...missing } = v5
+    expect(() => decode(missing)).toThrow()
+    expect(() => decode({ ...v5, tokenActivity: { samples: 0 } })).toThrow()
+    const v4 = decode({ ...missing, analyticsVersion: 4 })
+    expect("tokenActivity" in v4).toBe(false)
+    expect(Schema.decodeUnknownSync(SessionAnalyticsTokenActivity)({ ...tokenActivity, scopeModelKey: modelKey,
+      tokens: { ...tokens, input: { knownSubtotal: 0, reportedSamples: 1, missingSamples: 0, overflowed: false } },
+      cache: { ...cache, eligibleSamples: 1, missingSamples: 0, inputTokens: 0, readTokens: 0, writeTokens: 0, uncachedTokens: 0 }
+    })).toMatchObject({ scopeModelKey: modelKey, tokens: { input: { knownSubtotal: 0 } }, cache: { readShare: null } })
+  })
+  it.each([
+    { samples: -1 }, { timedSamples: 1.5 }, { untimedSamples: Infinity }, { scopeModelKey: "raw-model" },
+    { tokens: { ...tokens, input: { ...counter, knownSubtotal: Number.MAX_SAFE_INTEGER + 1 } } },
+    { tokens: { ...tokens, total: { ...counter, missingSamples: -1 } } },
+    { tokens: { ...tokens, cacheWrite: { ...counter, overflowed: "false" } } },
+    { cache: { ...cache, eligibleSamples: -1 } }, { cache: { ...cache, inputTokens: -1 } },
+    { cache: { ...cache, readShare: 1.01 } }, { cache: { ...cache, writeShare: -0.01 } },
+    { cache: { ...cache, uncachedShare: Infinity } },
+    { models: [{ ...tokenActivity.models[0], key: `model:${"B".repeat(64)}` }] },
+    { models: Array.from({ length: 1001 }, () => tokenActivity.models[0]) },
+    { threads: Array.from({ length: 5001 }, () => tokenActivity.threads[0]) },
+    { buckets: Array.from({ length: 61 }, () => tokenActivity.buckets[0]) },
+    { buckets: [{ ...tokenActivity.buckets[0], range: "界".repeat(171) }] },
+    { buckets: [{ ...tokenActivity.buckets[0], records: -1 }] }
+  ])("rejects token activity beyond its transport bounds case %#", invalid => {
+    expect(() => Schema.decodeUnknownSync(SessionAnalyticsTokenActivity)({ ...tokenActivity, ...invalid })).toThrow()
   })
   it("preserves zero point spans and null all-unplaced spans", () => {
     expect(Schema.decodeUnknownSync(SessionAnalyticsActivity)(activity).recordSpanMilliseconds).toBe(0)

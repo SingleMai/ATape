@@ -265,7 +265,7 @@ const activityAPI = async (page: Page) => {
   await page.route("**/api/v1/sessions/session-reader/analytics*", async route => {
     const url = new URL(route.request().url()); reads.push(url)
     expect(route.request().method()).toBe("GET")
-    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
+    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v4+json;v=5, application/vnd.atape.session-analytics.v3+json, application/json")
     expect(route.request().headers()).not.toHaveProperty("atape-accept-analytics-version")
     await hold?.(url)
     if (mode === "changed") { await route.fulfill({ status: 409, json: { code: "refresh_required", detail: "The selected snapshot changed." } }); return }
@@ -458,7 +458,7 @@ test("old v1 and v2 Servers expose unavailable activity while retaining their ex
   const reads: URL[] = []
   await page.route("**/api/v1/sessions/session-reader/analytics*", async route => {
     const url = new URL(route.request().url()); reads.push(url)
-    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
+    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v4+json;v=5, application/vnd.atape.session-analytics.v3+json, application/json")
     expect(url.searchParams.has("range")).toBe(false)
     expect(url.searchParams.get("metric")).not.toBe("records")
     await route.fulfill({ json: version === 1 ? analyticsFixture : capabilitiesFixture })
@@ -540,7 +540,7 @@ const stableToolAPI = async (page: Page) => {
   let mode: "ready" | "changed" | "replacement" | "denied" = "ready"
   await page.route("**/api/v1/sessions/session-reader/analytics*", async route => {
     const url = new URL(route.request().url()); reads.push(url)
-    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
+    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v4+json;v=5, application/vnd.atape.session-analytics.v3+json, application/json")
     if (mode === "changed") { await route.fulfill({ status: 409, json: { code: "refresh_required", detail: "Changed" } }); return }
     if (mode === "denied") { await route.fulfill({ status: 404, json: { code: "not_found", detail: "Unavailable" } }); return }
     if (mode === "replacement") {
@@ -647,7 +647,7 @@ test("a v3 Server keeps activity and display-label tool filters when it ignores 
   const reads: URL[] = []
   await page.route("**/api/v1/sessions/session-reader/analytics*", async route => {
     const url = new URL(route.request().url()); reads.push(url)
-    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
+    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v4+json;v=5, application/vnd.atape.session-analytics.v3+json, application/json")
     await route.fulfill({ json: activityFixture })
   })
   await page.goto(path)

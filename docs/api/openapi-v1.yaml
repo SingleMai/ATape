@@ -1007,20 +1007,22 @@ paths:
       x-atape-authorization-actions: [conversation.read]
       tags: [Captured sessions]
       summary: Analyze one current Canonical Session
-      description: Statistics and evidence share one authorized snapshot. Thread selects the v3/v4 activity scope; summary, tools, capabilities and usage remain Session-wide. Other filters affect evidence only. Resource bounds fail explicitly with 422 analytics_capacity.
+      description: Statistics and evidence share one authorized snapshot. Thread selects recorded activity and Token scope; model selects v5 Token activity. Summary, tools, capabilities and original usage totals remain Session-wide. Token interval evidence selects contemporaneous recorded Events, not per-response or per-model attribution. Other filters affect evidence only. Resource bounds fail explicitly with 422 analytics_capacity.
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
       security: [{webSession: []}]
       parameters:
-        - {name: Accept, in: header, description: "Absent the vendor media range, returns version 2. Acceptable application/vnd.atape.session-analytics.v4+json and v3+json ranges opt into versions 4 and 3; the highest admitted nonzero version wins. q=0 declines that range. Older Servers may ignore newer ranges and return their supported representation. Responses retain application/json.", schema: {type: string, maxLength: 4096, default: application/json}}
+        - {name: Accept, in: header, description: "Absent the vendor media range, returns version 2. Acceptable application/vnd.atape.session-analytics.v5+json, v4+json and v3+json ranges opt into versions 5, 4 and 3; the highest admitted nonzero version wins. q=0 declines that range. Web can opt into v5 with v=5 on the v4 media range, retaining v3 and JSON fallback in a 118-byte CORS-safelisted value; older v4 Servers ignore that parameter. Older Servers may ignore newer ranges and return their supported representation. Responses retain application/json.", schema: {type: string, maxLength: 4096, default: application/json}}
         - {name: snapshot, in: query, schema: {type: string, minLength: 1, maxLength: 200}}
-        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills, records, files]}}
+        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills, records, files, token_records]}}
         - {name: thread, in: query, schema: {type: string, maxLength: 500}}
-        - {name: tool, in: query, description: Exact returned group key in version 4, or display label in version 2/3; only applies to tools/failed_tools/unknown_tools., schema: {type: string, maxLength: 500}}
+        - {name: model, in: query, description: Version 5 returned opaque model key; selects Token activity only and binds Token interval navigation., schema: {type: string, pattern: "^model:[0-9a-f]{64}$"}}
+        - {name: tokenRange, in: query, description: Version 5 opaque Usage interval; requires token_records metric and snapshot. Cannot combine with the separate Event range., schema: {type: string, minLength: 1, maxLength: 512}}
+        - {name: tool, in: query, description: Exact returned group key in version 4/5, or display label in version 2/3; only applies to tools/failed_tools/unknown_tools., schema: {type: string, maxLength: 500}}
         - {name: capability, in: query, description: Exact normalized MCP tool or Skill name; only applies to mcp_tools/skills., schema: {type: string, maxLength: 500}}
         - {name: server, in: query, description: Exact normalized MCP server; only applies to mcp_tools and can be selected independently., schema: {type: string, maxLength: 500}}
-        - {name: file, in: query, description: Version 4 returned opaque file path key; only applies to files and combines with operation., schema: {type: string, maxLength: 500}}
-        - {name: operation, in: query, description: Version 4 explicit file operation; search paths describe scope rather than matching files., schema: {type: string, enum: [read, edit, search]}}
-        - {name: range, in: query, description: "Opaque Server-generated dated bucket or unplaced selection; requires version 3 or 4, records metric and snapshot. Bound to Session and Thread scope.", schema: {type: string, minLength: 1, maxLength: 512}}
+        - {name: file, in: query, description: Version 4/5 returned opaque file path key; only applies to files and combines with operation., schema: {type: string, maxLength: 500}}
+        - {name: operation, in: query, description: Version 4/5 explicit file operation; search paths describe scope rather than matching files., schema: {type: string, enum: [read, edit, search]}}
+        - {name: range, in: query, description: "Opaque Server-generated dated bucket or unplaced selection; requires version 3, 4 or 5, records metric and snapshot. Bound to Session and Thread scope.", schema: {type: string, minLength: 1, maxLength: 512}}
         - {name: cursor, in: query, description: Opaque evidence cursor bound to the Session, snapshot, analytics version and filters; requires snapshot., schema: {type: string, maxLength: 1024}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
       responses:
@@ -1039,16 +1041,18 @@ paths:
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
       security: [{webSession: []}]
       parameters:
-        - {name: Accept, in: header, description: "Absent the vendor media range, returns version 2. Acceptable application/vnd.atape.session-analytics.v4+json and v3+json ranges opt into versions 4 and 3; the highest admitted nonzero version wins. q=0 declines that range. Older Servers may ignore newer ranges and return their supported representation. Responses retain application/json.", schema: {type: string, maxLength: 4096, default: application/json}}
+        - {name: Accept, in: header, description: "Absent the vendor media range, returns version 2. Acceptable application/vnd.atape.session-analytics.v5+json, v4+json and v3+json ranges opt into versions 5, 4 and 3; the highest admitted nonzero version wins. q=0 declines that range. Web can opt into v5 with v=5 on the v4 media range, retaining v3 and JSON fallback in a 118-byte CORS-safelisted value; older v4 Servers ignore that parameter. Older Servers may ignore newer ranges and return their supported representation. Responses retain application/json.", schema: {type: string, maxLength: 4096, default: application/json}}
         - {name: snapshot, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
-        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills, records, files]}}
+        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills, records, files, token_records]}}
         - {name: thread, in: query, schema: {type: string, maxLength: 500}}
-        - {name: tool, in: query, description: Exact returned group key in version 4, or display label in version 2/3; only applies to tools/failed_tools/unknown_tools., schema: {type: string, maxLength: 500}}
+        - {name: model, in: query, description: Version 5 returned opaque model key; selects Token activity only and binds Token interval navigation., schema: {type: string, pattern: "^model:[0-9a-f]{64}$"}}
+        - {name: tokenRange, in: query, description: Version 5 opaque Usage interval; requires token_records metric and snapshot. Cannot combine with the separate Event range., schema: {type: string, minLength: 1, maxLength: 512}}
+        - {name: tool, in: query, description: Exact returned group key in version 4/5, or display label in version 2/3; only applies to tools/failed_tools/unknown_tools., schema: {type: string, maxLength: 500}}
         - {name: capability, in: query, description: Exact normalized MCP tool or Skill name; only applies to mcp_tools/skills., schema: {type: string, maxLength: 500}}
         - {name: server, in: query, description: Exact normalized MCP server; only applies to mcp_tools and can be selected independently., schema: {type: string, maxLength: 500}}
-        - {name: file, in: query, description: Version 4 returned opaque file path key; only applies to files and combines with operation., schema: {type: string, maxLength: 500}}
-        - {name: operation, in: query, description: Version 4 explicit file operation; search paths describe scope rather than matching files., schema: {type: string, enum: [read, edit, search]}}
-        - {name: range, in: query, description: "Opaque Server-generated dated bucket or unplaced selection; requires version 3 or 4, records metric and snapshot. Bound to Session and Thread scope.", schema: {type: string, minLength: 1, maxLength: 512}}
+        - {name: file, in: query, description: Version 4/5 returned opaque file path key; only applies to files and combines with operation., schema: {type: string, maxLength: 500}}
+        - {name: operation, in: query, description: Version 4/5 explicit file operation; search paths describe scope rather than matching files., schema: {type: string, enum: [read, edit, search]}}
+        - {name: range, in: query, description: "Opaque Server-generated dated bucket or unplaced selection; requires version 3, 4 or 5, records metric and snapshot. Bound to Session and Thread scope.", schema: {type: string, minLength: 1, maxLength: 512}}
         - {name: cursor, in: query, description: Opaque cursor for the same snapshot and filters., schema: {type: string, maxLength: 1024}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
       responses:
@@ -2231,7 +2235,7 @@ components:
         kind: {type: string}
         label: {type: string}
         occurredAt: {type: [string, "null"]}
-        clockQuality: {type: string, enum: [recorded, unknown, legacy], description: Required in version 3/4; recorded is an admitted source clock and is not independently verified.}
+        clockQuality: {type: string, enum: [recorded, unknown, legacy], description: Required in version 3/4/5; recorded is an admitted source clock and is not independently verified.}
     SessionAnalyticsEvidence:
       type: object
       additionalProperties: false
@@ -2291,6 +2295,90 @@ components:
         searchCalls: {type: integer, minimum: 0, description: Distinct folded calls with a recorded search scope.}
         uniquePaths: {type: integer, minimum: 0, maximum: 2000}
         paths: {type: array, maxItems: 2000, items: {$ref: "#/components/schemas/SessionAnalyticsFilePath"}}
+    SessionAnalyticsTokenCounter:
+      type: object
+      additionalProperties: false
+      required: [knownSubtotal, reportedSamples, missingSamples, overflowed]
+      properties:
+        knownSubtotal: {type: [integer, "null"], minimum: 0, maximum: 9007199254740991, description: Sum of usable recorded classifications; null with no reported samples or arithmetic overflow.}
+        reportedSamples: {type: integer, minimum: 0}
+        missingSamples: {type: integer, minimum: 0}
+        overflowed: {type: boolean}
+    SessionAnalyticsTokenAccounting:
+      type: object
+      additionalProperties: false
+      required: [total, input, output, cacheRead, cacheWrite]
+      properties:
+        total: {$ref: "#/components/schemas/SessionAnalyticsTokenCounter"}
+        input: {$ref: "#/components/schemas/SessionAnalyticsTokenCounter"}
+        output: {$ref: "#/components/schemas/SessionAnalyticsTokenCounter"}
+        cacheRead: {$ref: "#/components/schemas/SessionAnalyticsTokenCounter"}
+        cacheWrite: {$ref: "#/components/schemas/SessionAnalyticsTokenCounter"}
+    SessionAnalyticsTokenCache:
+      type: object
+      additionalProperties: false
+      required: [eligibleSamples, missingSamples, inputTokens, readTokens, writeTokens, uncachedTokens, readShare, writeShare, uncachedShare]
+      description: One cohort with complete valid inclusive input and both cache classifications; fractions share the same denominator. No eligible sample, zero denominator or overflow leaves shares null.
+      properties:
+        eligibleSamples: {type: integer, minimum: 0}
+        missingSamples: {type: integer, minimum: 0}
+        inputTokens: {type: [integer, "null"], minimum: 0, maximum: 9007199254740991}
+        readTokens: {type: [integer, "null"], minimum: 0, maximum: 9007199254740991}
+        writeTokens: {type: [integer, "null"], minimum: 0, maximum: 9007199254740991}
+        uncachedTokens: {type: [integer, "null"], minimum: 0, maximum: 9007199254740991}
+        readShare: {type: [number, "null"], minimum: 0, maximum: 1}
+        writeShare: {type: [number, "null"], minimum: 0, maximum: 1}
+        uncachedShare: {type: [number, "null"], minimum: 0, maximum: 1}
+    SessionAnalyticsTokenModel:
+      type: object
+      additionalProperties: false
+      required: [key, model, samples, tokens, cache]
+      properties:
+        key: {type: string, pattern: "^model:[0-9a-f]{64}$"}
+        model: {type: [string, "null"], description: Null is an unreported model, distinct from any literal model name.}
+        samples: {type: integer, minimum: 0}
+        tokens: {$ref: "#/components/schemas/SessionAnalyticsTokenAccounting"}
+        cache: {$ref: "#/components/schemas/SessionAnalyticsTokenCache"}
+    SessionAnalyticsTokenThread:
+      type: object
+      additionalProperties: false
+      required: [id, samples, tokens, cache]
+      properties:
+        id: {type: string}
+        samples: {type: integer, minimum: 0}
+        tokens: {$ref: "#/components/schemas/SessionAnalyticsTokenAccounting"}
+        cache: {$ref: "#/components/schemas/SessionAnalyticsTokenCache"}
+    SessionAnalyticsTokenBucket:
+      type: object
+      additionalProperties: false
+      required: [from, to, includesEnd, samples, tokens, records, range]
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        includesEnd: {type: boolean}
+        samples: {type: integer, minimum: 0}
+        tokens: {$ref: "#/components/schemas/SessionAnalyticsTokenAccounting"}
+        records: {type: integer, minimum: 0, description: Recorded-quality Events in this interval and Thread scope; not events attributed to this model or Usage sample.}
+        range: {type: string, minLength: 1, maxLength: 512, description: Opaque tokenRange selector bound to Session, snapshot, version, Thread and model.}
+    SessionAnalyticsTokenActivity:
+      type: object
+      additionalProperties: false
+      required: [scopeThreadId, scopeModelKey, samples, timedSamples, untimedSamples, firstRecordedAt, lastRecordedAt, tokens, untimedTokens, cache, models, threads, buckets]
+      description: Scoped distribution by stored Usage timestamps. Usage time is independent of Event clock-quality classification and is not independently verified. Existing Session-wide usage totals retain their nullable semantics.
+      properties:
+        scopeThreadId: {type: [string, "null"]}
+        scopeModelKey: {type: [string, "null"], pattern: "^model:[0-9a-f]{64}$"}
+        samples: {type: integer, minimum: 0}
+        timedSamples: {type: integer, minimum: 0}
+        untimedSamples: {type: integer, minimum: 0}
+        firstRecordedAt: {type: [string, "null"], format: date-time}
+        lastRecordedAt: {type: [string, "null"], format: date-time}
+        tokens: {$ref: "#/components/schemas/SessionAnalyticsTokenAccounting"}
+        untimedTokens: {$ref: "#/components/schemas/SessionAnalyticsTokenAccounting"}
+        cache: {$ref: "#/components/schemas/SessionAnalyticsTokenCache"}
+        models: {type: array, maxItems: 1000, items: {$ref: "#/components/schemas/SessionAnalyticsTokenModel"}}
+        threads: {type: array, maxItems: 5000, items: {$ref: "#/components/schemas/SessionAnalyticsTokenThread"}}
+        buckets: {type: array, maxItems: 60, items: {$ref: "#/components/schemas/SessionAnalyticsTokenBucket"}}
     SessionAnalytics:
       type: object
       additionalProperties: false
@@ -2298,7 +2386,7 @@ components:
       properties:
         snapshot: {type: string, description: Opaque conditional token for the current Canonical input; not historical retention or authorization.}
         head: {type: string, description: Selected publication head when normalized publication is active.}
-        analyticsVersion: {type: integer, enum: [2, 3, 4]}
+        analyticsVersion: {type: integer, enum: [2, 3, 4, 5]}
         sessionId: {type: string}
         captureStatus: {type: string}
         summary: {$ref: "#/components/schemas/SessionAnalyticsSummary"}
@@ -2309,8 +2397,9 @@ components:
         evidence: {$ref: "#/components/schemas/SessionAnalyticsEvidence"}
         activity: {$ref: "#/components/schemas/SessionAnalyticsActivity"}
         fileActivity: {$ref: "#/components/schemas/SessionAnalyticsFileActivity"}
+        tokenActivity: {$ref: "#/components/schemas/SessionAnalyticsTokenActivity"}
       allOf:
-        - if: {properties: {analyticsVersion: {enum: [3, 4]}}, required: [analyticsVersion]}
+        - if: {properties: {analyticsVersion: {enum: [3, 4, 5]}}, required: [analyticsVersion]}
           then:
             required: [activity]
             properties:
@@ -2318,7 +2407,7 @@ components:
                 properties:
                   items:
                     items: {required: [clockQuality]}
-        - if: {properties: {analyticsVersion: {const: 4}}, required: [analyticsVersion]}
+        - if: {properties: {analyticsVersion: {enum: [4, 5]}}, required: [analyticsVersion]}
           then:
             required: [fileActivity]
             properties:
@@ -2338,6 +2427,9 @@ components:
         - if: {properties: {analyticsVersion: {const: 2}}, required: [analyticsVersion]}
           then:
             not: {required: [activity]}
+        - if: {properties: {analyticsVersion: {const: 5}}, required: [analyticsVersion]}
+          then: {required: [tokenActivity]}
+          else: {not: {required: [tokenActivity]}}
     SearchResult:
       type: object
       additionalProperties: false

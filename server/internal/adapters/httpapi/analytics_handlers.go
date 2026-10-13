@@ -26,8 +26,11 @@ func (h *Handler) readSessionAnalytics(w http.ResponseWriter, r *http.Request, e
 		return
 	}
 	queryFields := []string{"snapshot", "metric", "thread", "tool", "capability", "server", "cursor", "limit", "range"}
-	if version == sessionanalytics.StableToolVersion {
+	if version >= sessionanalytics.StableToolVersion {
 		queryFields = append(queryFields, "file", "operation")
+	}
+	if version >= sessionanalytics.TokenActivityVersion {
+		queryFields = append(queryFields, "model", "tokenRange")
 	}
 	values, ok := strictQuery(w, r, queryFields...)
 	if !ok {
@@ -59,6 +62,7 @@ func (h *Handler) readSessionAnalytics(w http.ResponseWriter, r *http.Request, e
 		Snapshot: values.Get("snapshot"), Metric: values.Get("metric"), Thread: values.Get("thread"),
 		Tool: values.Get("tool"), Capability: values.Get("capability"), Server: values.Get("server"), Cursor: values.Get("cursor"), Limit: limit,
 		AnalyticsVersion: version, Range: values.Get("range"), File: values.Get("file"), Operation: values.Get("operation"),
+		Model: values.Get("model"), TokenRange: values.Get("tokenRange"),
 	})
 	if err != nil {
 		writeError(w, r, err)
@@ -84,6 +88,8 @@ func analyticsVersion(values []string) (int, bool) {
 				selected = sessionanalytics.ActivityVersion
 			case "application/vnd.atape.session-analytics.v4+json":
 				selected = sessionanalytics.StableToolVersion
+			case "application/vnd.atape.session-analytics.v5+json":
+				selected = sessionanalytics.TokenActivityVersion
 			}
 			media, parameters, err := mime.ParseMediaType(strings.TrimSpace(item))
 			if err != nil {
@@ -94,6 +100,12 @@ func analyticsVersion(values []string) (int, bool) {
 			}
 			if selected == 0 || media != raw {
 				continue
+			}
+			// Keep the Browser's v5/v4/v3/JSON negotiation below the 128-byte
+			// CORS safelist bound. Older v4 Servers ignore this additive media
+			// parameter and still select v4; v3 Servers select the next range.
+			if selected == sessionanalytics.StableToolVersion && parameters["v"] == "5" {
+				selected = sessionanalytics.TokenActivityVersion
 			}
 			quality := 1.0
 			if value, found := parameters["q"]; found {
