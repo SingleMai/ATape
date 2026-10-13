@@ -1011,7 +1011,7 @@ paths:
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
       security: [{webSession: []}]
       parameters:
-        - {name: Accept, in: header, description: "Absent the vendor media range, returns version 2. Acceptable application/vnd.atape.session-analytics.v5+json, v4+json and v3+json ranges opt into versions 5, 4 and 3; the highest admitted nonzero version wins. q=0 declines that range. Older Servers may ignore newer ranges and return their supported representation. Responses retain application/json.", schema: {type: string, maxLength: 4096, default: application/json}}
+        - {name: Accept, in: header, description: "Absent the vendor media range, returns version 2. Acceptable application/vnd.atape.session-analytics.v5+json, v4+json and v3+json ranges opt into versions 5, 4 and 3; the highest admitted nonzero version wins. q=0 declines that range. Web can opt into v5 with v=5 on the v4 media range, retaining v3 and JSON fallback in a 118-byte CORS-safelisted value; older v4 Servers ignore that parameter. Older Servers may ignore newer ranges and return their supported representation. Responses retain application/json.", schema: {type: string, maxLength: 4096, default: application/json}}
         - {name: snapshot, in: query, schema: {type: string, minLength: 1, maxLength: 200}}
         - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills, records, files, token_records]}}
         - {name: thread, in: query, schema: {type: string, maxLength: 500}}
@@ -1041,7 +1041,7 @@ paths:
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
       security: [{webSession: []}]
       parameters:
-        - {name: Accept, in: header, description: "Absent the vendor media range, returns version 2. Acceptable application/vnd.atape.session-analytics.v5+json, v4+json and v3+json ranges opt into versions 5, 4 and 3; the highest admitted nonzero version wins. q=0 declines that range. Older Servers may ignore newer ranges and return their supported representation. Responses retain application/json.", schema: {type: string, maxLength: 4096, default: application/json}}
+        - {name: Accept, in: header, description: "Absent the vendor media range, returns version 2. Acceptable application/vnd.atape.session-analytics.v5+json, v4+json and v3+json ranges opt into versions 5, 4 and 3; the highest admitted nonzero version wins. q=0 declines that range. Web can opt into v5 with v=5 on the v4 media range, retaining v3 and JSON fallback in a 118-byte CORS-safelisted value; older v4 Servers ignore that parameter. Older Servers may ignore newer ranges and return their supported representation. Responses retain application/json.", schema: {type: string, maxLength: 4096, default: application/json}}
         - {name: snapshot, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
         - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills, records, files, token_records]}}
         - {name: thread, in: query, schema: {type: string, maxLength: 500}}

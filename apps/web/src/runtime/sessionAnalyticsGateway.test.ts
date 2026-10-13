@@ -19,7 +19,7 @@ describe("Session analytics browser Adapter", () => {
     expect(Object.fromEntries(url.searchParams)).toEqual({ snapshot: "snapshot-one", metric: "failed_tools", thread: "child/one", tool: "read & write", cursor: "opaque+=", limit: "20" })
     expect(result.usage.tokens).toMatchObject({ total: null, cacheRead: 0 })
     const headers = new Headers(fetchMock.mock.calls[0]![1]?.headers)
-    expect(headers.get("Accept")).toBe("application/vnd.atape.session-analytics.v5+json, application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
+    expect(headers.get("Accept")).toBe("application/vnd.atape.session-analytics.v4+json;v=5, application/vnd.atape.session-analytics.v3+json, application/json")
     expect(headers.has("ATape-Accept-Analytics-Version")).toBe(false)
   })
   it("reads v1 without inventing a capability report, and v2 with a required report", async () => {
@@ -73,7 +73,7 @@ describe("Session analytics browser Adapter", () => {
     expect(Object.fromEntries(url.searchParams)).toEqual({ ...query, limit: "4" })
     expect(url.searchParams.get("file")).not.toBe("/work/src/app.ts")
     expect(new Headers(fetchMock.mock.calls[0]![1]?.headers).get("Accept"))
-      .toBe("application/vnd.atape.session-analytics.v5+json, application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
+      .toBe("application/vnd.atape.session-analytics.v4+json;v=5, application/vnd.atape.session-analytics.v3+json, application/json")
   })
   it("negotiates v5 and transports model and Token interval keys without converting them into Event identity", async () => {
     const report = { ...tokenActivityFixture, snapshot: "snapshot-one", activity: { ...tokenActivityFixture.activity, scopeThreadId: "child/one" }, tokenActivity: { ...tokenActivityFixture.tokenActivity,
@@ -86,7 +86,7 @@ describe("Session analytics browser Adapter", () => {
     const url = new URL(fetchMock.mock.calls[0]![0] as string, "http://localhost")
     expect(Object.fromEntries(url.searchParams)).toEqual({ ...query, limit: "4" })
     expect(new Headers(fetchMock.mock.calls[0]![1]?.headers).get("Accept"))
-      .toBe("application/vnd.atape.session-analytics.v5+json, application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
+      .toBe("application/vnd.atape.session-analytics.v4+json;v=5, application/vnd.atape.session-analytics.v3+json, application/json")
     expect(url.searchParams.has("at")).toBe(false)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })

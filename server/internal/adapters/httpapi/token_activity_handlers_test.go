@@ -15,7 +15,24 @@ import (
 	"github.com/SingleMai/ATape/server/internal/testsupport/canonicalcontract"
 )
 
-const tokenActivityAccept = "application/vnd.atape.session-analytics.v5+json, " + stableToolAccept
+const tokenActivityAccept = "application/vnd.atape.session-analytics.v4+json;v=5, " + activityAccept
+
+func TestTokenAcceptWorksWithExistingSplitOriginCORS(t *testing.T) {
+	if len(tokenActivityAccept) > 128 {
+		t.Fatal("Token negotiation would trigger a browser CORS preflight")
+	}
+	h, route := activityHTTPFixture(t, true)
+	r := httptest.NewRequest(http.MethodGet, route, nil)
+	r.Header.Set("Origin", "https://web.example.com")
+	r.Header.Set("Accept", tokenActivityAccept)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	var result sessionanalytics.Result
+	decodeResponse(t, w, &result)
+	if w.Code != 200 || result.AnalyticsVersion != 5 || w.Header().Get("Access-Control-Allow-Origin") != "https://web.example.com" || w.Header().Get("Access-Control-Allow-Credentials") != "true" {
+		t.Fatalf("Token split-origin request: %d %+v", w.Code, w.Header())
+	}
+}
 
 func TestTokenActivityHTTPIntervalsCoverageAndConditionalReader(t *testing.T) {
 	store := canonical.NewMemoryStoreWithControlPlane(canonicalcontract.MemoryControlPlane())

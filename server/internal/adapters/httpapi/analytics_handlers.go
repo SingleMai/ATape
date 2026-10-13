@@ -101,6 +101,12 @@ func analyticsVersion(values []string) (int, bool) {
 			if selected == 0 || media != raw {
 				continue
 			}
+			// Keep the Browser's v5/v4/v3/JSON negotiation below the 128-byte
+			// CORS safelist bound. Older v4 Servers ignore this additive media
+			// parameter and still select v4; v3 Servers select the next range.
+			if selected == sessionanalytics.StableToolVersion && parameters["v"] == "5" {
+				selected = sessionanalytics.TokenActivityVersion
+			}
 			quality := 1.0
 			if value, found := parameters["q"]; found {
 				if !validAnalyticsQuality(value) {

@@ -167,7 +167,7 @@ export const browserRequest = (path: string, options: RequestOptions = {}): Effe
     try: async (interruption) => {
       const method = options.method ?? "GET"
       const headers = new Headers({ Accept: options.acceptAnalyticsVersion === 5
-        ? "application/vnd.atape.session-analytics.v5+json, application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json"
+        ? "application/vnd.atape.session-analytics.v4+json;v=5, application/vnd.atape.session-analytics.v3+json, application/json"
         : options.acceptAnalyticsVersion === 4
         ? "application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json"
         : options.acceptAnalyticsVersion === 3

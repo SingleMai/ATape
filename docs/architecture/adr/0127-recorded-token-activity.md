@@ -60,6 +60,21 @@ The conditional Reader opens returned real Event anchors. Browser Back restores
 the selection and page; scope changes clear incompatible range and cursor state.
 Every read rechecks authorization and stale source tokens fail as before.
 
+### Browser negotiation
+
+Listing full v5, v4, v3 and JSON media ranges produces a 163-byte Accept value,
+exceeding the [Fetch CORS safelist's 128-byte limit](https://fetch.spec.whatwg.org/#cors-safelisted-request-header).
+Old Server preflight policy deliberately does not allow a requested Accept
+header. Adding it to new Server policy would not repair older deployments.
+
+Web therefore sends the 118-byte value
+`application/vnd.atape.session-analytics.v4+json;v=5, application/vnd.atape.session-analytics.v3+json, application/json`.
+New Server recognizes only the exact `v=5` parameter on v4 as v5 opt-in, subject
+to that range's normal quality value. Older v4 Servers ignore the parameter and
+select v4; older v3 Servers select the next range; earlier Servers retain JSON.
+The direct full v5 vendor media range remains supported. This preserves one
+request and the existing older-Server fallback without widening CORS policy.
+
 ## Scope
 
 Metric rules remain in the Go Module Implementation; Web remains Presentation.

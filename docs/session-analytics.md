@@ -238,8 +238,13 @@ Event opens the existing conditional Reader target. Browser Back returns to the
 analysis view with its range, Thread and page selection. A full refresh clears
 range, cursor, snapshot and filters together.
 
-New Web requests v5, then v4 and v3, with the standard safelisted header
-`Accept: application/vnd.atape.session-analytics.v5+json, application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json`.
+New Web negotiates v5, v4, v3 and JSON with the 118-byte safelisted header
+`Accept: application/vnd.atape.session-analytics.v4+json;v=5, application/vnd.atape.session-analytics.v3+json, application/json`.
+New Server recognizes `v=5` on the v4 media range. An older v4 Server ignores
+that parameter and retains v4; an older v3 Server selects the next range. Direct
+clients can also opt in with `application/vnd.atape.session-analytics.v5+json`.
+Listing every full vendor range together would exceed the browser's 128-byte
+safelist bound and trigger a preflight that older Server policy rejects.
 The response remains `application/json`, with `Vary: Accept` and `no-store`.
 Without opt-in, the Server retains v2 behavior and its cursor contract. A Server
 supporting v3 can return activity with the original label-based tool rows. Older
