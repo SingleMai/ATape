@@ -14,7 +14,7 @@ const fileAPI = async (page: Page) => {
   let mode: "ready" | "changed" | "replacement" | "denied" = "ready"
   await page.route("**/api/v1/sessions/session-reader/analytics*", async route => {
     const url = new URL(route.request().url()), query = url.searchParams; reads.push(url)
-    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
+    expect(route.request().headers().accept).toBe("application/vnd.atape.session-analytics.v4+json;v=5, application/vnd.atape.session-analytics.v3+json, application/json")
     if (mode === "changed") { await route.fulfill({ status: 409, json: { code: "refresh_required", detail: "Changed" } }); return }
     if (mode === "denied") { await route.fulfill({ status: 404, json: { code: "not_found", detail: "Unavailable" } }); return }
     if (mode === "replacement") {
